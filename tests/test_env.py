@@ -71,3 +71,22 @@ def test_strings_and_status_aliases_accepted():
     if sub["filing_status"] == "married_joint":
         sub["filing_status"] = "Married filing jointly"
     assert score_episode(cid, calls).success
+
+
+def test_agent_loop_with_scripted_generator():
+    from taxops.agent_loop import parse_calls, run_episode, tool_schemas
+
+    cid = "hard-00007"
+    plan = oracle(cid)  # replay the oracle's calls as if a model produced them
+
+    def generate(messages):
+        i = sum(m["role"] == "assistant" for m in messages)
+        c = plan[i]
+        return json.dumps([{"tool_name": c["name"], "parameters": c["arguments"]}])
+
+    ep = run_episode(cid, generate, tool_schemas())
+    assert ep["stop"] == "submitted"
+    assert score_episode(cid, ep["calls"]).success
+    assert "submit_return" in ep["messages"][0]["content"]
+    assert parse_calls("Sure! I'll start.") is None
+    assert parse_calls('<|START_ACTION|>[{"tool_name": "x", "parameters": {}}]<|END_ACTION|>')[0]["name"] == "x"

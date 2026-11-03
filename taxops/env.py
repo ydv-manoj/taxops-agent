@@ -34,6 +34,7 @@ RETURN_FIELDS = [
 ]
 
 TIERS = ("easy", "medium", "hard")
+ALL_TIERS = TIERS + ("shift",)  # "shift" = hard rules with names and decoys never seen in training
 
 EMPLOYERS = ["Acme Logistics Inc", "Brightline Health LLC", "Cedar Software Corp",
              "Delta Foods Co", "Evergreen School District", "Foxglove Retail Inc"]
@@ -41,6 +42,15 @@ BANKS = ["First Harbor Bank", "Granite Credit Union", "Summit Savings", "Northwi
 BROKERS = ["Bluechip Brokerage", "Keystone Investments", "Meridian Funds"]
 CHARITIES = ["City Food Bank", "Riverside Animal Shelter", "Literacy Alliance"]
 CLIENTS = ["Orbit Design Studio", "Pine Street Cafe", "Quarry Media LLC"]
+
+SHIFT_POOLS = {
+    "EMPLOYERS": ["Halcyon Robotics Inc", "Juniper Transit Authority", "Kestrel Pharma Ltd",
+                  "Lumen Energy Corp", "Marlow Hospitality Group", "Nimbus Aerospace LLC"],
+    "BANKS": ["Ironwood Federal Credit Union", "Lakeview Trust", "Oakmont Savings Bank", "Prairie State Bank"],
+    "BROKERS": ["Redwood Capital Markets", "Sterling Index Funds", "Tidewater Securities"],
+    "CHARITIES": ["Coastal Cleanup Fund", "Mountain Rescue Volunteers", "Youth Chess League"],
+    "CLIENTS": ["Uplift Fitness Studio", "Vantage Print Shop", "Willow Event Planning"],
+}
 
 
 @dataclass
@@ -80,9 +90,13 @@ def _money(x: int) -> str:
 
 def generate_case(case_id: str) -> Case:
     tier = case_id.split("-")[0]
-    if tier not in TIERS:
-        raise ValueError(f"case_id must start with one of {TIERS}: {case_id!r}")
+    if tier not in ALL_TIERS:
+        raise ValueError(f"case_id must start with one of {ALL_TIERS}: {case_id!r}")
     rng = random.Random(case_id)
+    shift = tier == "shift"
+    pools = SHIFT_POOLS if shift else {"EMPLOYERS": EMPLOYERS, "BANKS": BANKS, "BROKERS": BROKERS,
+                                       "CHARITIES": CHARITIES, "CLIENTS": CLIENTS}
+    hard = tier in ("hard", "shift")
     status = rng.choice(["single", "married_joint"])
     docs: list[tuple[str, str, bool]] = []  # (title, text, relevant)
     notes: list[str] = []
@@ -91,7 +105,7 @@ def generate_case(case_id: str) -> Case:
     wages = withholding = interest = dividends = business = mortgage = charity = 0
 
     n_w2 = 1 if tier == "easy" else rng.randint(1, 2 if status == "single" else 3)
-    for employer in rng.sample(EMPLOYERS, n_w2):
+    for employer in rng.sample(pools['EMPLOYERS'], n_w2):
         w = rng.randrange(24_000, 150_000, 25)
         wh = round(w * rng.uniform(0.07, 0.17))
         wages, withholding = wages + w, withholding + wh
@@ -103,9 +117,9 @@ def generate_case(case_id: str) -> Case:
                      f"Box 17 State income tax: {_money(round(w * 0.04))}", True))
 
     if tier != "easy":
-        for bank in rng.sample(BANKS, rng.randint(0, 2)):
+        for bank in rng.sample(pools['BANKS'], rng.randint(0, 2)):
             amt = rng.randint(40, 3_200)
-            if tier == "hard" and rng.random() < 0.35:
+            if hard and rng.random() < 0.35:
                 # Trap: a corrected form replaces the original from the same payer.
                 old = amt + rng.randint(30, 400)
                 docs.append((f"Form 1099-INT Interest Income - {bank}",
@@ -124,27 +138,27 @@ def generate_case(case_id: str) -> Case:
 
         if rng.random() < 0.4:
             mortgage = rng.randint(3_000, 24_000)
-            docs.append(("Form 1098 Mortgage Interest Statement - " + rng.choice(BANKS),
+            docs.append(("Form 1098 Mortgage Interest Statement - " + rng.choice(pools['BANKS']),
                          f"Form 1098 ({tax_year})\nBox 1 Mortgage interest received from payer(s)/borrower(s): "
                          f"{_money(mortgage)}\nBox 2 Outstanding mortgage principal: "
                          f"{_money(rng.randint(150, 600) * 1_000)}", True))
-        for org in rng.sample(CHARITIES, rng.randint(0, 2)):
+        for org in rng.sample(pools['CHARITIES'], rng.randint(0, 2)):
             gift = rng.randint(100, 9_000)
             charity += gift
             docs.append((f"Donation receipt - {org}",
                          f"{org}\nThank you for your cash gift of {_money(gift)} received in {tax_year}.\n"
                          f"No goods or services were provided in exchange.", True))
 
-    if tier == "hard":
+    if hard:
         if rng.random() < 0.6:
-            broker = rng.choice(BROKERS)
+            broker = rng.choice(pools['BROKERS'])
             dividends = rng.randint(100, 6_000)
             docs.append((f"Form 1099-DIV Dividends - {broker}",
                          f"Form 1099-DIV ({tax_year})\nPayer: {broker}\n"
                          f"Box 1a Total ordinary dividends: {_money(dividends)}\n"
                          f"Box 1b Qualified dividends: {_money(round(dividends * 0.6))}", True))
         if rng.random() < 0.5:
-            client = rng.choice(CLIENTS)
+            client = rng.choice(pools['CLIENTS'])
             gross = rng.randint(5_000, 60_000)
             expenses = round(gross * rng.uniform(0.1, 0.45))
             business = gross - expenses
@@ -164,11 +178,22 @@ def generate_case(case_id: str) -> Case:
          f"U.S. Individual Income Tax Return {tax_year - 1}\nLine 1a Wages: {_money(rng.randrange(20_000, 140_000, 25))}\n"
          f"Line 15 Taxable income: {_money(rng.randrange(10_000, 120_000, 25))}\nLine 24 Total tax: {_money(rng.randint(1_000, 20_000))}"),
         ("Bank statement - December",
-         f"{rng.choice(BANKS)}\nOpening balance: {_money(rng.randint(1_000, 30_000))}\n"
+         f"{rng.choice(pools['BANKS'])}\nOpening balance: {_money(rng.randint(1_000, 30_000))}\n"
          f"Deposits: {_money(rng.randint(2_000, 15_000))}\nInterest paid this month: {_money(rng.randint(1, 60))}"),
         ("Health insurance card", "Member ID: XJ4-22918\nGroup: 4471\nPlan: Silver PPO"),
     ]
-    n_distract = {"easy": 0, "medium": 1, "hard": rng.randint(2, 3)}[tier]
+    if shift:  # decoys of kinds never seen in training, including last year's 1099
+        distractors += [
+            ("Form W-4 Employee's Withholding Certificate",
+             f"Form W-4 ({tax_year})\nStep 4(c) Extra withholding per pay period: {_money(rng.randint(20, 300))}\n"
+             f"Step 3 Claim dependents: {_money(rng.choice([0, 2_000, 4_000]))}"),
+            (f"Form 1099-INT Interest Income - {rng.choice(pools['BANKS'])} ({tax_year - 1})",
+             f"Form 1099-INT ({tax_year - 1})\nBox 1 Interest income: {_money(rng.randint(40, 2_500))}"),
+            ("Pay stub - December",
+             f"Gross pay this period: {_money(rng.randint(2_000, 9_000))}\nYear-to-date federal tax: "
+             f"{_money(rng.randint(3_000, 20_000))}\n(Use your W-2 for tax filing.)"),
+        ]
+    n_distract = {"easy": 0, "medium": 1, "hard": rng.randint(2, 3), "shift": rng.randint(3, 4)}[tier]
     for title, text in rng.sample(distractors, n_distract):
         docs.append((title, text, False))
 
