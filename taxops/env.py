@@ -88,6 +88,28 @@ def _money(x: int) -> str:
     return f"${x:,}"
 
 
+TRAIN_AUGMENT_BELOW = 100_000  # train ids only; eval ids (100000+) are unchanged
+
+
+def _augment_train_decoys(docs: list, case_id: str, pools: dict, tax_year: int) -> None:
+    """Extra decoys for training cases, of kinds the shift set never uses (shift has a W-4,
+    a pay stub and last year's 1099-INT). The prior-year 1099-DIV teaches "check the tax year"
+    so the shift set can test whether that carries over to a 1099-INT. Uses its own rng so
+    the rest of the case is the same as before."""
+    rng = random.Random(case_id + "/train-decoys")
+    pool = [
+        (f"Form 1099-DIV Dividends - {rng.choice(pools['BROKERS'])} ({tax_year - 1})",
+         f"Form 1099-DIV ({tax_year - 1})\nBox 1a Total ordinary dividends: {_money(rng.randint(100, 5_000))}"),
+        ("Form W-9 Request for Taxpayer Identification Number",
+         "Form W-9\nName: (taxpayer)\nPart I Taxpayer Identification Number: ***-**-4471"),
+        (f"Brokerage account summary - {rng.choice(pools['BROKERS'])}",
+         f"Account value on Dec 31: {_money(rng.randint(5_000, 90_000))}\n"
+         f"Unrealized gain: {_money(rng.randint(100, 9_000))}\n(Not a tax form. See your 1099-DIV.)"),
+    ]
+    for title, text in rng.sample(pool, rng.randint(0, 2)):
+        docs.insert(rng.randint(0, len(docs)), (title, text, False))
+
+
 def generate_case(case_id: str) -> Case:
     tier = case_id.split("-")[0]
     if tier not in ALL_TIERS:
@@ -198,6 +220,8 @@ def generate_case(case_id: str) -> Case:
         docs.append((title, text, False))
 
     rng.shuffle(docs)
+    if not shift and tier != "easy" and int(case_id.rsplit("-", 1)[1]) < TRAIN_AUGMENT_BELOW:
+        _augment_train_decoys(docs, case_id, pools, tax_year)
     documents = [Document(f"D{i + 1}", t, x, r) for i, (t, x, r) in enumerate(docs)]
 
     agi = wages + interest + dividends + business

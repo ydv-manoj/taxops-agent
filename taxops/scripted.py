@@ -44,14 +44,15 @@ def oracle(case_id: str) -> list[dict]:
     for d in relevant:
         _call(log, env.read_document, turn=1, case_id=case_id, doc_id=d.doc_id)
 
-    wages, withheld, income, itemized, business = [], [], [], [], None
+    wages, withheld, income, interest, itemized, business = [], [], [], [], [], None
     for d in relevant:
         t = d.text
         if t.startswith("Form W-2"):
             wages += _amounts(t, "Box 1 Wages")
             withheld += _amounts(t, "Box 2 Federal income tax withheld")
         elif t.startswith("Form 1099-INT"):
-            income += _amounts(t, "Box 1 Interest income")
+            interest += _amounts(t, "Box 1 Interest income")
+            income += interest[-1:]
         elif t.startswith("Form 1099-DIV"):
             income += _amounts(t, "Box 1a Total ordinary dividends")
         elif t.startswith("Form 1098"):
@@ -66,10 +67,16 @@ def oracle(case_id: str) -> list[dict]:
         business = f"{business} - {expenses}"
 
     def calc(turn: int, terms: list[str]) -> None:
-        if len(terms) > 1 or (terms and " - " in terms[0]):
-            _call(log, env.calculator, turn=turn, expression=" + ".join(terms))
+        expr = " + ".join(terms)
+        done = {c["arguments"].get("expression") for c in log if c["name"] == "calculator"}
+        if (len(terms) > 1 or (terms and " - " in terms[0])) and expr not in done:
+            _call(log, env.calculator, turn=turn, expression=expr)
 
     agi_terms = [str(x) for x in wages + income] + ([f"({business})"] if business else [])
+    # Total each multi-document field too: SFT v2 summed these in its head at submit time
+    # and slipped digits (266,500 for 266,600).
+    calc(2, [str(x) for x in wages])
+    calc(2, [str(x) for x in interest])
     if business:
         calc(2, [business])
     calc(2, agi_terms)

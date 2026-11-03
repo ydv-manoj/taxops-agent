@@ -100,3 +100,16 @@ def test_oracle_calculator_sums_match_the_answer():
             assert float(a["agi"]) in results or a["agi"] == a["wages"], cid
         plan = oracle_plan(cid)
         assert len(plan) == 7 and plan[-1][0][0] == "submit_return", cid  # 7 turns, batched
+
+
+def test_train_decoys_leave_eval_alone_and_differ_from_shift():
+    from taxops import env
+    from taxops.data import SPLITS
+
+    train_kinds = {"Form W-9", "Brokerage account summary", "Form 1099-DIV ("}
+    shift_titles = {d.title for c in SPLITS["eval-shift"] for d in env.generate_case(c).documents}
+    assert not any(k in t for k in train_kinds for t in shift_titles)
+    eval_titles = {d.title for c in SPLITS["eval"] for d in env.generate_case(c).documents}
+    assert not any(k in t for k in ("Form W-9", "Brokerage account summary") for t in eval_titles)
+    train_titles = {d.title for c in SPLITS["train"] for d in env.generate_case(c).documents}
+    assert any("Form W-9" in t for t in train_titles)
