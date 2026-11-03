@@ -43,7 +43,7 @@ def test_tool_errors_are_recoverable_text():
 def test_oracle_is_perfect_and_minimal():
     for cid in CASES:
         s = score_episode(cid, oracle(cid))
-        assert s.success and s.wasted_calls == 0 and s.tool_calls == s.min_calls, cid
+        assert s.success and s.wasted_calls == 0 and s.tool_calls - s.calculator_calls == s.min_calls, cid
 
 
 def test_wasteful_is_right_but_wastes():
@@ -79,7 +79,7 @@ def test_agent_loop_with_scripted_generator():
     cid = "hard-00007"
     plan = oracle(cid)  # replay the oracle's calls as if a model produced them
 
-    def generate(messages):
+    def generate(messages):  # one call per turn here; batching is covered in test_rewards_data
         i = sum(m["role"] == "assistant" for m in messages)
         c = plan[i]
         return json.dumps([{"tool_name": c["name"], "parameters": c["arguments"]}])

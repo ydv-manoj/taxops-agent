@@ -20,7 +20,7 @@ from datasets import Dataset  # noqa: E402
 from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 
 from taxops import env  # noqa: E402
-from taxops.agent_loop import MAX_STEPS, RESULT_FORMAT, TOOLS_PROMPT  # noqa: E402
+from taxops.agent_loop import RESULT_FORMAT, TOOLS_PROMPT  # noqa: E402
 from taxops.data import SPLITS  # noqa: E402
 from taxops.rewards import taxops_reward  # noqa: E402
 
@@ -55,6 +55,7 @@ def main() -> None:
     ap.add_argument("--generations", type=int, default=4, help="rollouts per case (the GRPO group)")
     ap.add_argument("--tiers", default="medium,hard", help="train tiers; easy is solved by SFT already")
     ap.add_argument("--lr", type=float, default=5e-6)
+    ap.add_argument("--max-turns", type=int, default=16, help="turns per rollout; the hardest case needs ~14 calls")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--push", default=None)
     args = ap.parse_args()
@@ -80,7 +81,7 @@ def main() -> None:
         reward_funcs=[taxops_reward],
         tools_fallback_prompt=TOOLS_PROMPT,   # same system prompt as our eval loop
         tool_result_format=RESULT_FORMAT,
-        max_steps_per_turn=MAX_STEPS,
+        max_steps_per_turn=args.max_turns,
         output_dir=str(out),
         max_steps=2 if args.smoke else args.steps,
         per_device_train_batch_size=gen,
@@ -92,6 +93,7 @@ def main() -> None:
         beta=0.02,
         logging_steps=1,
         save_steps=50,
+        gradient_checkpointing=True,
         use_vllm=False,
         peft_config=dict(r=16, lora_alpha=32, target_modules="all-linear", task_type="CAUSAL_LM"),
         report_to="none",

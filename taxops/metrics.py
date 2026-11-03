@@ -25,7 +25,8 @@ class EpisodeScore:
     redundant_calls: int    # repeats, distractor reads, calls after submitting
     failed_calls: int       # the tool returned an ERROR
     invalid_calls: int      # unknown tool name or arguments that don't fit
-    min_calls: int          # fewest calls that can solve this case
+    min_calls: int          # fewest non-calculator calls that can solve this case
+    calculator_calls: int = 0
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -88,6 +89,7 @@ def score_episode(case_id: str, calls: list[dict]) -> EpisodeScore:
         failed_calls=failed,
         invalid_calls=invalid,
         min_calls=min_calls(case),
+        calculator_calls=sum(c.get("name") == "calculator" for c in calls),
     )
 
 
@@ -103,6 +105,9 @@ def summarize(scores: list[EpisodeScore]) -> dict:
         "avg_wasted_calls": sum(s.wasted_calls for s in scores) / n,
         "failed_call_rate": sum(s.failed_calls for s in scores) / max(1, sum(s.tool_calls for s in scores)),
         # Efficiency only counts on solved cases, so "do nothing" can't look efficient.
-        "calls_over_minimum_when_solved": (sum(s.tool_calls - s.min_calls for s in solved) / len(solved))
+        "avg_calculator_calls": sum(s.calculator_calls for s in scores) / n,
+        # Calculator calls are excluded: using one is good practice, not waste.
+        "calls_over_minimum_when_solved": (sum(s.tool_calls - s.calculator_calls - s.min_calls for s in solved)
+                                           / len(solved))
         if solved else None,
     }

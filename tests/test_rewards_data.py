@@ -84,3 +84,19 @@ def test_sft_conversations_are_valid():
             assert msgs[2 + 2 * k + 1]["content"].startswith("Tool result") and "ERROR" in msgs[2 + 2 * k + 1]["content"]
         else:
             assert r["skip_assistant_turns"] == []
+
+
+def test_oracle_calculator_sums_match_the_answer():
+    """The SFT demos must never teach a wrong sum."""
+    from taxops.data import oracle_plan
+
+    for cid in data.SPLITS["train"][::25] + data.SPLITS["eval-shift"][:20]:
+        a = env.generate_case(cid).answer
+        calcs = [c for c in oracle(cid) if c["name"] == "calculator"]
+        results = {float(c["result"]) for c in calcs}
+        assert not any(c["result"].startswith("ERROR") for c in calcs), cid
+        assert float(a["agi"] - a["deduction"]) in results and float(a["refund_or_owed"]) in results, cid
+        if " + " in " ".join(c["arguments"]["expression"] for c in calcs):
+            assert float(a["agi"]) in results or a["agi"] == a["wages"], cid
+        plan = oracle_plan(cid)
+        assert len(plan) == 7 and plan[-1][0][0] == "submit_return", cid  # 7 turns, batched

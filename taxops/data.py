@@ -26,35 +26,39 @@ SPLITS = {
 }
 
 
-def _replay(case_id: str, plan: list[tuple[str, dict]], schemas: list[dict]) -> dict:
-    """Run the real agent loop with a scripted 'model' that emits the planned calls."""
+Turn = list[tuple[str, dict]]  # the calls sent together in one assistant reply
+
+
+def _replay(case_id: str, plan: list[Turn], schemas: list[dict]) -> dict:
+    """Run the real agent loop with a scripted 'model' that emits the planned turns."""
 
     def generate(messages):
         i = sum(m["role"] == "assistant" for m in messages)
-        name, args = plan[i]
-        return json.dumps([{"tool_name": name, "parameters": args}])
+        return json.dumps([{"tool_name": name, "parameters": args} for name, args in plan[i]])
 
     return run_episode(case_id, generate, schemas)
 
 
-def oracle_plan(case_id: str) -> list[tuple[str, dict]]:
-    return [(c["name"], c["arguments"]) for c in oracle(case_id)]
+def oracle_plan(case_id: str) -> list[Turn]:
+    turns: dict[int, Turn] = {}
+    for c in oracle(case_id):
+        turns.setdefault(c["turn"], []).append((c["name"], c["arguments"]))
+    return [turns[k] for k in sorted(turns)]
 
 
-def recovery_plan(case_id: str, rng: random.Random) -> tuple[list[tuple[str, dict]], int]:
+def recovery_plan(case_id: str, rng: random.Random) -> tuple[list[Turn], int]:
     """An oracle run with one realistic mistake, then the fix, so the model learns to recover.
     Kinds: a wrong doc id, or a filing status the tools don't accept.
     Returns the plan and the index of the mistaken call, whose turn is left out of the loss."""
     plan = oracle_plan(case_id)
     kind = rng.choice(["bad_doc", "bad_status"])
     if kind == "bad_doc":
-        i = next(k for k, (n, _) in enumerate(plan) if n == "read_document")
+        i = next(k for k, turn in enumerate(plan) if turn[0][0] == "read_document")
         n_docs = len(env.generate_case(case_id).documents)
-        bad = dict(plan[i][1], doc_id=f"D{n_docs + rng.randint(1, 5)}")
-        plan.insert(i, ("read_document", bad))
+        plan.insert(i, [("read_document", {"case_id": case_id, "doc_id": f"D{n_docs + rng.randint(1, 5)}"})])
     else:
-        i = next(k for k, (n, _) in enumerate(plan) if n == "lookup_standard_deduction")
-        plan.insert(i, ("lookup_standard_deduction", {"filing_status": "joint married"}))
+        i = next(k for k, turn in enumerate(plan) if any(n == "lookup_standard_deduction" for n, _ in turn))
+        plan.insert(i, [("lookup_standard_deduction", {"filing_status": "joint married"})])
     return plan, i
 
 
