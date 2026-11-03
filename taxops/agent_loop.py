@@ -23,6 +23,7 @@ TOOLS_PROMPT = (
 RESULT_FORMAT = "Tool result for {name}: {content}"
 
 MAX_STEPS = 20
+MAX_CALLS = 40  # per-case tool-call budget, same for every model; real cases need 5-14
 
 
 def tool_schemas() -> list[dict]:
@@ -103,5 +104,8 @@ def run_episode(case_id: str, generate: Callable[[list[dict]], str], schemas: li
         messages.append({"role": "user", "content": "\n".join(results)})
         if any(c["name"] == "submit_return" for c in parsed):
             stop = "submitted"
+            break
+        if len(calls) >= MAX_CALLS:
+            stop = "call_budget"
             break
     return {"case_id": case_id, "stop": stop, "calls": calls, "messages": messages}

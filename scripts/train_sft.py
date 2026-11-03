@@ -78,10 +78,12 @@ def main() -> None:
                                              target_modules="all-linear", task_type="CAUSAL_LM"))
     model.print_trainable_parameters()
 
+    accum = 1 if args.smoke else 8
+    total_steps = 2 if args.smoke else max(1, int(len(data) * args.epochs / accum))
     targs = TrainingArguments(
         output_dir=args.out, num_train_epochs=args.epochs, max_steps=2 if args.smoke else -1,
-        per_device_train_batch_size=1, gradient_accumulation_steps=1 if args.smoke else 8,
-        learning_rate=args.lr, lr_scheduler_type="cosine", warmup_ratio=0.05,
+        per_device_train_batch_size=1, gradient_accumulation_steps=accum,
+        learning_rate=args.lr, lr_scheduler_type="cosine", warmup_steps=max(1, total_steps // 20),
         logging_steps=1 if args.smoke else 10, save_strategy="no", report_to="none",
         bf16=bf16, fp16=not bf16 and torch.cuda.is_available(), gradient_checkpointing=True,
     )
