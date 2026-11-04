@@ -11,7 +11,7 @@ ADAPTER = "$(dirname $(ls /kaggle/input/**/sft-v4/adapter_config.json /kaggle/in
 RUN = (f"A={ADAPTER}; echo adapter=$A; "
        "CUDA_VISIBLE_DEVICES=0 python scripts/eval_model.py --adapter $A --split eval --out /kaggle/working/runs/sft-v4-eval-full > /kaggle/working/eval.log 2>&1 & P=$!; "
        "CUDA_VISIBLE_DEVICES=1 python scripts/eval_model.py --adapter $A --split eval-shift --out /kaggle/working/runs/sft-v4-shift > /kaggle/working/shift.log 2>&1; "
-       "wait $P; tail -3 /kaggle/working/eval.log /kaggle/working/shift.log")
+       "wait $P; tail -n 3 /kaggle/working/eval.log /kaggle/working/shift.log")
 
 
 # Read-only HF token from the private dataset papw123/taxops-hf-token (CLI-pushed runs
@@ -25,6 +25,8 @@ else:
     os.environ["HF_TOKEN"] = UserSecretsClient().get_secret("HF_TOKEN")
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "transformers", "peft", "accelerate",
                 "huggingface_hub"], check=True)
+# Kaggle ships torchao 0.10; new peft refuses it when wrapping a non-quantized model. Not used here.
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-q", "-y", "torchao"])
 from huggingface_hub import snapshot_download
 
 snapshot_download("Manoj2142/taxops-dev", repo_type="dataset", local_dir="/kaggle/temp/taxops",
