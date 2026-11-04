@@ -47,7 +47,12 @@ def main() -> None:
     if args.adapter:
         from peft import PeftModel
 
-        model = PeftModel.from_pretrained(model, args.adapter).merge_and_unload()
+        repo, sub = args.adapter, None
+        if not Path(repo).exists() and repo.count("/") > 1:  # "user/repo/subfolder" on the Hub
+            user, name, sub = repo.split("/", 2)
+            repo = f"{user}/{name}"
+        kw = {"subfolder": sub} if sub else {}
+        model = PeftModel.from_pretrained(model, repo, **kw).merge_and_unload()
     model.eval()
 
     usage = {"prompt_tokens": 0, "completion_tokens": 0}
