@@ -16,6 +16,8 @@ the student would never see the documents (see README, "Findings").
 import argparse
 from collections import Counter
 import json
+import os
+import time
 import random
 import sys
 from pathlib import Path
@@ -25,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import torch  # noqa: E402
 from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import (AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq,  # noqa: E402
-                          Trainer, TrainingArguments)
+                          Trainer, TrainerCallback, TrainingArguments)
 
 from taxops.data import SPLITS, sft_conversations  # noqa: E402
 
@@ -49,6 +51,26 @@ def encode(tok, row, max_len):
     return {"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"], "labels": labels}
 
 
+class TrainedLogitsTrainer(Trainer):
+    """Project onto the 262k-token vocab only where a label is trained (~16% of positions).
+    Full logits for a 3.5k-token conversation need 3.4 GiB in fp32, more than a T4 has left."""
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        labels = inputs.pop("labels")
+        target = labels[:, 1:]
+        keep = torch.zeros_like(labels, dtype=torch.bool)
+        keep[:, :-1] = target != -100
+        out = model(**inputs, logits_to_keep=keep)  # logits come back flattened to (n_kept, vocab)
+        loss = torch.nn.functional.cross_entropy(out.logits.float(), target[target != -100].to(out.logits.device),
+                                                 reduction="sum")
+        loss = loss / (keep.sum() if num_items_in_batch is None else num_items_in_batch)
+        if num_items_in_batch is not None and self.args.average_tokens_across_devices:
+            # num_items_in_batch counts every GPU's tokens and DDP averages the gradients, so
+            # scale back up, as Trainer's own compute_loss does.
+            loss = loss * self.accelerator.num_processes
+        return (loss, out) if return_outputs else loss
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="CohereLabs/tiny-aya-global")
@@ -59,6 +81,7 @@ def main() -> None:
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--push", default=None, help="HF repo id for the adapter (created private)")
+    ap.add_argument("--max-minutes", type=float, default=None, help="stop cleanly (and still save) after this long")
     ap.add_argument("--qlora", action="store_true",
                     help="load the base in 4-bit (for a 16 GB T4, which also has no bf16)")
     args = ap.parse_args()
@@ -82,12 +105,18 @@ def main() -> None:
 
         quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=dtype,
                                    bnb_4bit_use_double_quant=True)
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype, device_map="auto",
+    # QLoRA: the whole 4-bit model on this process's GPU (one per process under torchrun on
+    # Kaggle's 2xT4). A model split across GPUs puts the hidden states on cuda:1 while the
+    # trained-position mask sits on cuda:0.
+    rank, world = int(os.environ.get("LOCAL_RANK", 0)), int(os.environ.get("WORLD_SIZE", 1))
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype,
+                                                 device_map={"": rank} if args.qlora else "auto",
                                                  quantization_config=quant)
     if args.qlora:
         from peft import prepare_model_for_kbit_training
 
-        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True,
+                                                gradient_checkpointing_kwargs={"use_reentrant": False})
     else:
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
@@ -100,25 +129,42 @@ def main() -> None:
                 p.data = p.data.float()
     model.print_trainable_parameters()
 
-    accum = 1 if args.smoke else 8
-    total_steps = 2 if args.smoke else max(1, int(len(data) * args.epochs / accum))
+    accum = 1 if args.smoke else max(1, 8 // world)  # effective batch 8 on any GPU count
+    total_steps = 2 if args.smoke else max(1, int(len(data) * args.epochs / (accum * world)))
     targs = TrainingArguments(
         output_dir=args.out, num_train_epochs=args.epochs, max_steps=2 if args.smoke else -1,
         per_device_train_batch_size=1, gradient_accumulation_steps=accum,
         learning_rate=args.lr, lr_scheduler_type="cosine", warmup_steps=max(1, total_steps // 20),
         logging_steps=1 if args.smoke else 10, save_strategy="no", report_to="none",
         bf16=bf16, fp16=not bf16 and torch.cuda.is_available(), gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False}, ddp_find_unused_parameters=False,
     )
-    trainer = Trainer(model=model, args=targs, train_dataset=data,
-                      data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100))
+    callbacks = []
+    if args.max_minutes:
+        start = time.time()
+
+        class TimeLimit(TrainerCallback):
+            """Stop between steps once over budget, so the adapter still gets saved."""
+
+            def on_step_end(self, a, state, control, **kw):
+                if time.time() - start > args.max_minutes * 60:
+                    control.should_training_stop = True
+
+        callbacks.append(TimeLimit())
+    trainer = TrainedLogitsTrainer(model=model, args=targs, train_dataset=data,
+                      data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100),
+                                   callbacks=callbacks)
     trainer.train()
     if torch.cuda.is_available():
         print(f"peak GPU memory {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB")
+    if not trainer.is_world_process_zero():
+        return
     model.save_pretrained(args.out)
     tok.save_pretrained(args.out)
     (Path(args.out) / "train_info.json").write_text(json.dumps({
         "base_model": args.model, "conversations": len(data), "epochs": args.epochs, "lr": args.lr,
-        "qlora": args.qlora, "kinds": dict(Counter(r["kind"] for r in rows)),
+        "qlora": args.qlora, "gpus": world, "steps_done": trainer.state.global_step,
+        "steps_planned": trainer.state.max_steps, "kinds": dict(Counter(r["kind"] for r in rows)),
         "log_history": trainer.state.log_history}, indent=2))
     print("saved adapter to", args.out)
     if args.push and not args.smoke:

@@ -7,7 +7,11 @@
   "is_private": true,
   "enable_gpu": true,
   "enable_internet": true,
-  "dataset_sources": ["papw123/taxops-hf-token"],
+  "dataset_sources": [
+    "papw123/taxops-hf-token"
+  ],
   "competition_sources": [],
-  "kernel_sources": []
+  "kernel_sources": [
+    "papw123/taxops-train"
+  ]
 }

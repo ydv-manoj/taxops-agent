@@ -3,9 +3,15 @@
 # The command to run is in RUN below; results land in /kaggle/working/runs/.
 import glob, os, subprocess, sys
 
-# Untrained Tiny Aya ("before" numbers): 60 eval cases + the same 30 shift cases Claude ran.
-RUN = ("python scripts/eval_model.py --split eval --limit 60 --out /kaggle/working/runs/base-60 && "
-       "python scripts/eval_model.py --split eval-shift --limit 30 --out /kaggle/working/runs/base-shift-30")
+# Earlier run, untrained Tiny Aya ("before" numbers):
+#   eval_model.py --split eval --limit 60 ... && eval_model.py --split eval-shift --limit 30 ...
+# Now SFT v4, from the papw123/taxops-train output (mounted under /kaggle/input), with eval on
+# GPU 0 and eval-shift on GPU 1 at the same time.
+ADAPTER = "$(dirname $(ls /kaggle/input/**/sft-v4/adapter_config.json /kaggle/input/*/*/*/sft-v4/adapter_config.json 2>/dev/null | head -1))"
+RUN = (f"A={ADAPTER}; echo adapter=$A; "
+       "(CUDA_VISIBLE_DEVICES=0 python scripts/eval_model.py --adapter $A --split eval --out /kaggle/working/runs/sft-v4-eval-full > /kaggle/working/eval.log 2>&1 &) ; "
+       "CUDA_VISIBLE_DEVICES=1 python scripts/eval_model.py --adapter $A --split eval-shift --out /kaggle/working/runs/sft-v4-shift > /kaggle/working/shift.log 2>&1; "
+       "while pgrep -f 'split eval ' >/dev/null; do sleep 30; done; tail -3 /kaggle/working/eval.log /kaggle/working/shift.log")
 
 
 # Read-only HF token from the private dataset papw123/taxops-hf-token (CLI-pushed runs

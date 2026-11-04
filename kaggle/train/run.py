@@ -5,11 +5,12 @@ import glob, os, subprocess, sys
 
 # The token is read-only, so the adapter is not pushed: it lands in /kaggle/working and is
 # downloaded with `kaggle kernels output`, then uploaded to HF from the laptop.
-SMOKE = True
-RUN = ("python scripts/train_sft.py --qlora --smoke --out /kaggle/working/sft-v4-smoke" if SMOKE else
-       "python scripts/train_sft.py --qlora --out /kaggle/working/sft-v4 && "
-       "python scripts/eval_model.py --adapter /kaggle/working/sft-v4 --split eval --limit 30 "
-       "--out /kaggle/working/runs/sft-v4-eval-30")
+SMOKE = False
+# Both T4s with DDP (one 4-bit copy per GPU): ~2,680 tokens x 2,100 conversations is ~15 h on
+# one T4, past Kaggle's 12 h limit. --max-minutes stops cleanly and saves before that.
+TRAIN = "torchrun --nproc_per_node 2 scripts/train_sft.py --qlora"
+RUN = (f"{TRAIN} --smoke --out /kaggle/working/sft-v4-smoke" if SMOKE else
+       f"{TRAIN} --max-minutes 630 --out /kaggle/working/sft-v4")
 
 
 # Read-only HF token from the private dataset papw123/taxops-hf-token (CLI-pushed runs
