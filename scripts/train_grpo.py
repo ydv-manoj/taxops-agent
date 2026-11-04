@@ -56,6 +56,10 @@ def main() -> None:
     ap.add_argument("--tiers", default="medium,hard", help="train tiers; easy is solved by SFT already")
     ap.add_argument("--lr", type=float, default=5e-6)
     ap.add_argument("--max-turns", type=int, default=16, help="turns per rollout; the hardest case needs ~14 calls")
+    ap.add_argument("--only-notes", default=None,
+                    help="train only on cases with this trap, e.g. corrected_1099 (the main SFT v3 failure)")
+    ap.add_argument("--temperature", type=float, default=1.0, help="rollout diversity; at 0.9 SFT groups were identical")
+    ap.add_argument("--max-minutes", type=float, default=None, help="stop cleanly (and still save) after this long")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--push", default=None)
     args = ap.parse_args()
@@ -67,10 +71,30 @@ def main() -> None:
 
     tiers = tuple(args.tiers.split(","))
     ids = [c for c in SPLITS["train"] if c.startswith(tiers)]
+    if args.only_notes:
+        ids = [c for c in ids if args.only_notes in env.generate_case(c).notes]
     random.Random(1).shuffle(ids)
     ids = ids[:2] if args.smoke else ids
     train = Dataset.from_list([{"prompt": [{"role": "user", "content": env.task_prompt(c)}], "case_id": c}
                                for c in ids])
+
+    callbacks = []
+    if args.max_minutes:
+        import time
+
+        from transformers import TrainerCallback
+
+        class TimeLimit(TrainerCallback):
+            """Stop between steps once over budget, so the adapter still gets saved and uploaded."""
+
+            def __init__(self):
+                self.start = time.time()
+
+            def on_step_end(self, a, state, control, **kw):
+                if time.time() - self.start > args.max_minutes * 60:
+                    control.should_training_stop = True
+
+        callbacks.append(TimeLimit())
 
     gen = 2 if args.smoke else args.generations
     trainer = create_agentic_trainer(
@@ -89,7 +113,7 @@ def main() -> None:
         num_generations=gen,
         max_completion_length=512,
         learning_rate=args.lr,
-        temperature=0.9,
+        temperature=args.temperature,
         beta=0.02,
         logging_steps=1,
         save_steps=50,
@@ -97,12 +121,14 @@ def main() -> None:
         use_vllm=False,
         peft_config=dict(r=16, lora_alpha=32, target_modules="all-linear", task_type="CAUSAL_LM"),
         report_to="none",
+        callbacks=callbacks,
     )
+    print(f"{len(ids)} training cases, {gen} rollouts each step")
     trainer.train()
     trainer.save_model(str(out / "adapter"))
     log = [h for h in trainer.trainer.state.log_history if "reward" in h]
     (out / "train_info.json").write_text(json.dumps({"start_model": args.sft_adapter or args.model,
-                                                     "cases": len(ids), "log_history": log}, indent=2))
+                                                     "cases": len(ids), "only_notes": args.only_notes, "log_history": log}, indent=2))
     if log:
         print(f"reward {log[0]['reward']:.3f} -> {log[-1]['reward']:.3f} over {len(log)} logged steps")
     if args.push and not args.smoke:
