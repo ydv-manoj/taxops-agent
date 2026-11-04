@@ -28,12 +28,14 @@ def main() -> None:
     ap.add_argument("--image", default=IMAGE)
     ap.add_argument("--agenttune", action="store_true",
                     help="Python 3.12 image + AgentTune from GitHub (needs torch 2.11), for GRPO")
+    ap.add_argument("--vllm", action="store_true", help="with --agenttune: install the [vllm] extra")
     args = ap.parse_args()
 
     if args.agenttune:
         args.image = "ghcr.io/astral-sh/uv:python3.12-bookworm"
+        extra = "[vllm]" if args.vllm else ""
         setup = ("apt-get update -qq && apt-get install -y -qq git >/dev/null && "
-                 "uv pip install --system -q 'agenttune @ git+https://github.com/Lexsi-Labs/AgentTune' huggingface_hub")
+                 f"uv pip install --system -q 'agenttune{extra} @ git+https://github.com/Lexsi-Labs/AgentTune' huggingface_hub")
     else:
         setup = f"pip install -q -U {args.pip}"
     script = f"""set -e

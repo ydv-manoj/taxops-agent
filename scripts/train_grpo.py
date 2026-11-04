@@ -60,6 +60,8 @@ def main() -> None:
                     help="train only on cases with this trap, e.g. corrected_1099 (the main SFT v3 failure)")
     ap.add_argument("--temperature", type=float, default=1.0, help="rollout diversity; at 0.9 SFT groups were identical")
     ap.add_argument("--max-minutes", type=float, default=None, help="stop cleanly (and still save) after this long")
+    ap.add_argument("--vllm", action="store_true",
+                    help="colocated vLLM rollouts; plain HF generate took 544 s per 4-rollout step")
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--push", default=None)
     args = ap.parse_args()
@@ -118,7 +120,9 @@ def main() -> None:
         logging_steps=1,
         save_steps=50,
         gradient_checkpointing=True,
-        use_vllm=False,
+        use_vllm=args.vllm,
+        **(dict(vllm_mode="colocate", vllm_gpu_memory_utilization=0.3, vllm_max_model_length=8192)
+           if args.vllm else {}),
         peft_config=dict(r=16, lora_alpha=32, target_modules="all-linear", task_type="CAUSAL_LM"),
         report_to="none",
         callbacks=callbacks,
