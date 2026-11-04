@@ -9,9 +9,9 @@ import glob, os, subprocess, sys
 # GPU 0 and eval-shift on GPU 1 at the same time.
 ADAPTER = "$(dirname $(ls /kaggle/input/**/sft-v4/adapter_config.json /kaggle/input/*/*/*/sft-v4/adapter_config.json 2>/dev/null | head -1))"
 RUN = (f"A={ADAPTER}; echo adapter=$A; "
-       "(CUDA_VISIBLE_DEVICES=0 python scripts/eval_model.py --adapter $A --split eval --out /kaggle/working/runs/sft-v4-eval-full > /kaggle/working/eval.log 2>&1 &) ; "
+       "CUDA_VISIBLE_DEVICES=0 python scripts/eval_model.py --adapter $A --split eval --out /kaggle/working/runs/sft-v4-eval-full > /kaggle/working/eval.log 2>&1 & P=$!; "
        "CUDA_VISIBLE_DEVICES=1 python scripts/eval_model.py --adapter $A --split eval-shift --out /kaggle/working/runs/sft-v4-shift > /kaggle/working/shift.log 2>&1; "
-       "while pgrep -f 'split eval ' >/dev/null; do sleep 30; done; tail -3 /kaggle/working/eval.log /kaggle/working/shift.log")
+       "wait $P; tail -3 /kaggle/working/eval.log /kaggle/working/shift.log")
 
 
 # Read-only HF token from the private dataset papw123/taxops-hf-token (CLI-pushed runs
