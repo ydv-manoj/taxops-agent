@@ -123,7 +123,11 @@ def main() -> None:
         save_steps=50,
         gradient_checkpointing=True,
         use_vllm=args.vllm,
-        **(dict(vllm_mode="colocate", vllm_gpu_memory_utilization=0.3, vllm_max_model_length=8192)
+        # IS correction off: vLLM's sampling logprobs don't line up with the multi-turn
+        # prompt+completion ids TRL rescores, so every ratio was masked to 0 and loss was 0
+        # (same fix as AgentTune's own rag/scripts/train_grpo.py).
+        **(dict(vllm_mode="colocate", vllm_gpu_memory_utilization=0.3, vllm_max_model_length=8192,
+                vllm_importance_sampling_correction=False)
            if args.vllm else {}),
         peft_config=dict(r=16, lora_alpha=32, target_modules="all-linear", task_type="CAUSAL_LM"),
         report_to="none",
