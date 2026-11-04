@@ -46,33 +46,55 @@ def oracle_plan(case_id: str) -> list[Turn]:
     return [turns[k] for k in sorted(turns)]
 
 
-def recovery_plan(case_id: str, rng: random.Random) -> tuple[list[Turn], int]:
+def recovery_plan(case_id: str, rng: random.Random, kind: str | None = None) -> tuple[list[Turn], int]:
     """An oracle run with one realistic mistake, then the fix, so the model learns to recover.
-    Kinds: a wrong doc id, or a filing status the tools don't accept.
-    Returns the plan and the index of the mistaken call, whose turn is left out of the loss."""
+    Kinds: a wrong doc id, a filing status the tools don't accept, a decoy read alongside the
+    real documents, or (v4) the superseded original 1099-INT read next to its CORRECTED copy.
+    The last two are what SFT v3 did on most of its failures: the oracle demos never open those
+    documents, so the model never saw what to do once it had. Here the later turns leave them out.
+    Returns the plan and the index of the mistaken turn, which is left out of the loss."""
     plan = oracle_plan(case_id)
-    kind = rng.choice(["bad_doc", "bad_status"])
+    case = env.generate_case(case_id)
+    kind = kind or rng.choice(["bad_doc", "bad_status"])
     if kind == "bad_doc":
         i = next(k for k, turn in enumerate(plan) if turn[0][0] == "read_document")
-        n_docs = len(env.generate_case(case_id).documents)
-        plan.insert(i, [("read_document", {"case_id": case_id, "doc_id": f"D{n_docs + rng.randint(1, 5)}"})])
-    else:
+        plan.insert(i, [("read_document", {"case_id": case_id, "doc_id": f"D{len(case.documents) + rng.randint(1, 5)}"})])
+    elif kind == "bad_status":
         i = next(k for k, turn in enumerate(plan) if any(n == "lookup_standard_deduction" for n, _ in turn))
         plan.insert(i, [("lookup_standard_deduction", {"filing_status": "joint married"})])
+    else:
+        if kind == "read_superseded":
+            extra = [d for d in case.documents if not d.relevant and d.title.startswith("Form 1099-INT")
+                     and any(c.relevant and c.title == d.title + " (CORRECTED)" for c in case.documents)]
+        else:  # read_decoy
+            extra = [d for d in case.documents if not d.relevant]
+        i = next(k for k, turn in enumerate(plan) if turn[0][0] == "read_document")
+        for d in rng.sample(extra, 1 if kind == "read_decoy" else len(extra)):
+            plan[i].insert(rng.randint(0, len(plan[i])), ("read_document", {"case_id": case_id, "doc_id": d.doc_id}))
+        plan[i].sort(key=lambda c: int(c[1]["doc_id"][1:]))  # read in folder order, like the model does
     return plan, i
 
 
-def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, seed: int = 0) -> list[dict]:
+def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, superseded_share: float = 0.6,
+                      seed: int = 0) -> list[dict]:
+    """superseded_share: of the train cases with a CORRECTED 1099-INT, how many become
+    read_superseded recoveries (v4). The rest stay as clean oracle runs or ordinary recoveries."""
     rng = random.Random(seed)
     schemas = tool_schemas()
     rows = []
     for cid in case_ids:
-        recovery = rng.random() < recovery_share
-        plan, skip = recovery_plan(cid, rng) if recovery else (oracle_plan(cid), None)
+        case = env.generate_case(cid)
+        kind = None
+        if "corrected_1099" in case.notes and rng.random() < superseded_share:
+            kind = "read_superseded"
+        elif rng.random() < recovery_share:
+            kinds = ["bad_doc", "bad_status"] + (["read_decoy"] * 2 if any(not d.relevant for d in case.documents) else [])
+            kind = rng.choice(kinds)
+        plan, skip = recovery_plan(cid, rng, kind) if kind else (oracle_plan(cid), None)
         ep = _replay(cid, plan, schemas)
         assert ep["stop"] == "submitted", cid
         # skip_assistant_turns: 0-based assistant-turn indices to exclude from the SFT loss.
-        rows.append({"case_id": cid, "kind": "recovery" if recovery else "oracle", "messages": ep["messages"],
+        rows.append({"case_id": cid, "kind": kind or "oracle", "messages": ep["messages"],
                      "skip_assistant_turns": [] if skip is None else [skip]})
     return rows
 

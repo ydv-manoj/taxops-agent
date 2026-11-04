@@ -14,6 +14,7 @@ the student would never see the documents (see README, "Findings").
 """
 
 import argparse
+from collections import Counter
 import json
 import random
 import sys
@@ -58,24 +59,45 @@ def main() -> None:
     ap.add_argument("--max-len", type=int, default=4096)
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--push", default=None, help="HF repo id for the adapter (created private)")
+    ap.add_argument("--qlora", action="store_true",
+                    help="load the base in 4-bit (for a 16 GB T4, which also has no bf16)")
     args = ap.parse_args()
 
     ids = list(SPLITS["train"])
     random.Random(0).shuffle(ids)  # mix tiers
-    ids = ids[:8] if args.smoke else ids[: args.limit] if args.limit else ids
+    ids = ids[:200] if args.smoke else ids[: args.limit] if args.limit else ids
     rows = sft_conversations(ids)
     tok = AutoTokenizer.from_pretrained(args.model)
     data = [encode(tok, r, args.max_len) for r in rows]
+    if args.smoke:  # the 2 longest of 200, so the smoke test also checks peak memory
+        data = sorted(data, key=lambda d: -len(d["input_ids"]))[:2]
     trained = sum(sum(x != -100 for x in d["labels"]) for d in data)
     print(f"{len(data)} conversations, {sum(len(d['input_ids']) for d in data):,} tokens, {trained:,} trained tokens")
 
     bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.bfloat16 if bf16 else torch.float16,
-                                                 device_map="auto")
-    model.gradient_checkpointing_enable()
-    model.enable_input_require_grads()
+    dtype = torch.bfloat16 if bf16 else torch.float16
+    quant = None
+    if args.qlora:
+        from transformers import BitsAndBytesConfig
+
+        quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=dtype,
+                                   bnb_4bit_use_double_quant=True)
+    model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype, device_map="auto",
+                                                 quantization_config=quant)
+    if args.qlora:
+        from peft import prepare_model_for_kbit_training
+
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+    else:
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
     model = get_peft_model(model, LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05,
                                              target_modules="all-linear", task_type="CAUSAL_LM"))
+    if not bf16:
+        # fp16 mixed precision needs fp32 master weights, or the grad scaler refuses to unscale.
+        for p in model.parameters():
+            if p.requires_grad:
+                p.data = p.data.float()
     model.print_trainable_parameters()
 
     accum = 1 if args.smoke else 8
@@ -90,10 +112,13 @@ def main() -> None:
     trainer = Trainer(model=model, args=targs, train_dataset=data,
                       data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100))
     trainer.train()
+    if torch.cuda.is_available():
+        print(f"peak GPU memory {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB")
     model.save_pretrained(args.out)
     tok.save_pretrained(args.out)
     (Path(args.out) / "train_info.json").write_text(json.dumps({
         "base_model": args.model, "conversations": len(data), "epochs": args.epochs, "lr": args.lr,
+        "qlora": args.qlora, "kinds": dict(Counter(r["kind"] for r in rows)),
         "log_history": trainer.state.log_history}, indent=2))
     print("saved adapter to", args.out)
     if args.push and not args.smoke:

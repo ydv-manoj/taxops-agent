@@ -105,6 +105,13 @@ def _augment_train_decoys(docs: list, case_id: str, pools: dict, tax_year: int) 
         (f"Brokerage account summary - {rng.choice(pools['BROKERS'])}",
          f"Account value on Dec 31: {_money(rng.randint(5_000, 90_000))}\n"
          f"Unrealized gain: {_money(rng.randint(100, 9_000))}\n(Not a tax form. See your 1099-DIV.)"),
+        # v4: two more kinds, still none of the shift set's.
+        ("Form 1095-C Employer-Provided Health Insurance Offer and Coverage",
+         f"Form 1095-C ({tax_year})\nLine 15 Employee required contribution: {_money(rng.randint(40, 400))}\n"
+         "(Information only. Keep with your records; nothing to enter on Form 1040.)"),
+        (f"Credit card annual summary - {rng.choice(pools['BANKS'])}",
+         f"Total purchases in {tax_year}: {_money(rng.randint(3_000, 60_000))}\n"
+         f"Cash back earned: {_money(rng.randint(30, 900))}\n(Not a tax form. Cash back rewards are not income.)"),
     ]
     for title, text in rng.sample(pool, rng.randint(0, 2)):
         docs.insert(rng.randint(0, len(docs)), (title, text, False))
