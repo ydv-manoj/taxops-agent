@@ -42,6 +42,7 @@ def main() -> None:
 {setup}
 python -c "from huggingface_hub import snapshot_download; snapshot_download('{REPO}', repo_type='dataset', local_dir='/work')"
 cd /work
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 mkdir -p runs/{args.name}
 set +e
 {args.command} 2>&1 | tee runs/{args.name}/job.log

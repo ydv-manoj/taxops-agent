@@ -110,8 +110,10 @@ def main() -> None:
         max_steps_per_turn=args.max_turns,
         output_dir=str(out),
         max_steps=2 if args.smoke else args.steps,
-        per_device_train_batch_size=gen,
-        gradient_accumulation_steps=1,
+        # One rollout per backward pass: Tiny Aya's 262k vocab makes the logits of 4 x ~4k-token
+        # rollouts ~17 GB in fp32, which ran out of memory next to colocated vLLM. Same group of 4.
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=gen,
         num_generations=gen,
         max_completion_length=512,
         learning_rate=args.lr,
