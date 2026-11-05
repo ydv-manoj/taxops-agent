@@ -29,7 +29,7 @@ from peft import LoraConfig, get_peft_model  # noqa: E402
 from transformers import (AutoModelForCausalLM, AutoTokenizer, DataCollatorForSeq2Seq,  # noqa: E402
                           Trainer, TrainerCallback, TrainingArguments)
 
-from taxops.data import SPLITS, sft_conversations  # noqa: E402
+from taxops.data import SPLITS, sft_conversations, v5_conversations  # noqa: E402
 
 
 def encode(tok, row, max_len):
@@ -84,12 +84,20 @@ def main() -> None:
     ap.add_argument("--max-minutes", type=float, default=None, help="stop cleanly (and still save) after this long")
     ap.add_argument("--qlora", action="store_true",
                     help="load the base in 4-bit (for a 16 GB T4, which also has no bf16)")
+    ap.add_argument("--mix", choices=["v4", "v5"], default="v4",
+                    help="v4: all 2,100 train ids with recovery demos; v5: 600 targeted clean demos")
+    ap.add_argument("--init-adapter", default=None,
+                    help="keep training this adapter (local dir or HF repo) instead of a fresh LoRA")
     args = ap.parse_args()
 
-    ids = list(SPLITS["train"])
-    random.Random(0).shuffle(ids)  # mix tiers
-    ids = ids[:200] if args.smoke else ids[: args.limit] if args.limit else ids
-    rows = sft_conversations(ids)
+    if args.mix == "v5":
+        rows = v5_conversations()
+        rows = rows[:200] if args.smoke else rows[: args.limit] if args.limit else rows
+    else:
+        ids = list(SPLITS["train"])
+        random.Random(0).shuffle(ids)  # mix tiers
+        ids = ids[:200] if args.smoke else ids[: args.limit] if args.limit else ids
+        rows = sft_conversations(ids)
     tok = AutoTokenizer.from_pretrained(args.model)
     data = [encode(tok, r, args.max_len) for r in rows]
     if args.smoke:  # the 2 longest of 200, so the smoke test also checks peak memory
@@ -110,7 +118,7 @@ def main() -> None:
     # trained-position mask sits on cuda:0.
     rank, world = int(os.environ.get("LOCAL_RANK", 0)), int(os.environ.get("WORLD_SIZE", 1))
     model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=dtype,
-                                                 device_map={"": rank} if args.qlora else "auto",
+                                                 device_map={"": rank} if args.qlora or world > 1 else "auto",
                                                  quantization_config=quant)
     if args.qlora:
         from peft import prepare_model_for_kbit_training
@@ -120,8 +128,13 @@ def main() -> None:
     else:
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
-    model = get_peft_model(model, LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05,
-                                             target_modules="all-linear", task_type="CAUSAL_LM"))
+    if args.init_adapter:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, args.init_adapter, is_trainable=True)
+    else:
+        model = get_peft_model(model, LoraConfig(r=16, lora_alpha=32, lora_dropout=0.05,
+                                                 target_modules="all-linear", task_type="CAUSAL_LM"))
     if not bf16:
         # fp16 mixed precision needs fp32 master weights, or the grad scaler refuses to unscale.
         for p in model.parameters():
@@ -163,7 +176,8 @@ def main() -> None:
     tok.save_pretrained(args.out)
     (Path(args.out) / "train_info.json").write_text(json.dumps({
         "base_model": args.model, "conversations": len(data), "epochs": args.epochs, "lr": args.lr,
-        "qlora": args.qlora, "gpus": world, "steps_done": trainer.state.global_step,
+        "qlora": args.qlora, "mix": args.mix, "init_adapter": args.init_adapter,
+        "gpus": world, "steps_done": trainer.state.global_step,
         "steps_planned": trainer.state.max_steps, "kinds": dict(Counter(r["kind"] for r in rows)),
         "log_history": trainer.state.log_history}, indent=2))
     print("saved adapter to", args.out)

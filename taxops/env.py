@@ -89,6 +89,7 @@ def _money(x: int) -> str:
 
 
 TRAIN_AUGMENT_BELOW = 100_000  # train ids only; eval ids (100000+) are unchanged
+V5_TRAIN_FROM = 700  # ids 0..699 keep the v4 decoy pool; v5's extra train ids (700+) add more kinds
 
 
 def _augment_train_decoys(docs: list, case_id: str, pools: dict, tax_year: int) -> None:
@@ -113,6 +114,29 @@ def _augment_train_decoys(docs: list, case_id: str, pools: dict, tax_year: int) 
          f"Total purchases in {tax_year}: {_money(rng.randint(3_000, 60_000))}\n"
          f"Cash back earned: {_money(rng.randint(30, 900))}\n(Not a tax form. Cash back rewards are not income.)"),
     ]
+    if int(case_id.rsplit("-", 1)[1]) >= V5_TRAIN_FROM:  # v5: seven more kinds, new train ids only
+        employer = rng.choice(pools["EMPLOYERS"])
+        pool += [
+            (f"Form W-2 Wage and Tax Statement - {employer} ({tax_year - 1})",
+             f"Form W-2 ({tax_year - 1})\nEmployer: {employer}\n"
+             f"Box 1 Wages, tips, other compensation: {_money(rng.randrange(24_000, 150_000, 25))}\n"
+             f"Box 2 Federal income tax withheld: {_money(rng.randint(2_000, 20_000))}"),
+            (f"401(k) quarterly statement - {rng.choice(pools['BROKERS'])}",
+             f"Balance on Dec 31: {_money(rng.randint(8_000, 200_000))}\nYour contributions this quarter: "
+             f"{_money(rng.randint(500, 6_000))}\n(Not a tax form. Contributions are already left out of W-2 Box 1.)"),
+            (f"Form 8879 IRS e-file Signature Authorization ({tax_year - 1})",
+             f"Form 8879 ({tax_year - 1})\nAdjusted gross income: {_money(rng.randrange(20_000, 160_000, 25))}\n"
+             "Taxpayer PIN: *****"),
+            ("Auto insurance renewal notice",
+             f"Policy period: Jan 1 - Dec 31\nPremium due: {_money(rng.randint(600, 2_400))}"),
+            (f"Fundraising letter - {rng.choice(pools['CHARITIES'])}",
+             f"Please consider a gift of {_money(rng.choice([50, 100, 250, 500]))} this year.\n"
+             "(This is a request, not a receipt. No gift from you has been recorded.)"),
+            ("Phone bill - November", f"Mobile plan\nAmount due: {_money(rng.randint(30, 140))}"),
+            ("Employer benefits enrollment confirmation",
+             f"Plan year {tax_year + 1}\nMedical: Silver PPO\nDental: Basic\n"
+             f"Per-paycheck cost: {_money(rng.randint(40, 300))}"),
+        ]
     for title, text in rng.sample(pool, rng.randint(0, 2)):
         docs.insert(rng.randint(0, len(docs)), (title, text, False))
 

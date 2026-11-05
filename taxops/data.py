@@ -4,6 +4,9 @@ Splits are fixed id ranges, so train and eval can never overlap:
   train       tiers easy/medium/hard, ids 0..699          (2,100 cases)
   eval        tiers easy/medium/hard, ids 100000..100099  (300 cases)
   eval-shift  tier "shift", ids 200000..200149            (150 cases)
+  dev         tier "hard",  ids 110000..110029            (30 cases, for choosing between models)
+  dev-shift   tier "shift", ids 300000..300049            (50 cases, same; never trained on)
+  v5 training also uses extra train ids 700..99999 (see v5_conversations).
 
     python3 -m taxops.data export out/   # writes the split files and sft.jsonl
 """
@@ -23,6 +26,8 @@ SPLITS = {
     "train": [f"{t}-{i:05d}" for t in env.TIERS for i in range(0, 700)],
     "eval": [f"{t}-{i:05d}" for t in env.TIERS for i in range(100_000, 100_100)],
     "eval-shift": [f"shift-{i:05d}" for i in range(200_000, 200_150)],
+    "dev": [f"hard-{i:05d}" for i in range(110_000, 110_030)],
+    "dev-shift": [f"shift-{i:05d}" for i in range(300_000, 300_050)],
 }
 
 
@@ -76,9 +81,10 @@ def recovery_plan(case_id: str, rng: random.Random, kind: str | None = None) -> 
 
 
 def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, superseded_share: float = 0.6,
-                      seed: int = 0) -> list[dict]:
+                      seed: int = 0, read_recoveries: bool = True) -> list[dict]:
     """superseded_share: of the train cases with a CORRECTED 1099-INT, how many become
-    read_superseded recoveries (v4). The rest stay as clean oracle runs or ordinary recoveries."""
+    read_superseded recoveries (v4). The rest stay as clean oracle runs or ordinary recoveries.
+    read_recoveries=False keeps only the bad_doc / bad_status recoveries (v3, v5)."""
     rng = random.Random(seed)
     schemas = tool_schemas()
     rows = []
@@ -88,7 +94,8 @@ def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, supersed
         if "corrected_1099" in case.notes and rng.random() < superseded_share:
             kind = "read_superseded"
         elif rng.random() < recovery_share:
-            kinds = ["bad_doc", "bad_status"] + (["read_decoy"] * 2 if any(not d.relevant for d in case.documents) else [])
+            decoys = read_recoveries and any(not d.relevant for d in case.documents)
+            kinds = ["bad_doc", "bad_status"] + (["read_decoy"] * 2 if decoys else [])
             kind = rng.choice(kinds)
         plan, skip = recovery_plan(cid, rng, kind) if kind else (oracle_plan(cid), None)
         ep = _replay(cid, plan, schemas)
@@ -96,6 +103,23 @@ def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, supersed
         # skip_assistant_turns: 0-based assistant-turn indices to exclude from the SFT loss.
         rows.append({"case_id": cid, "kind": kind or "oracle", "messages": ep["messages"],
                      "skip_assistant_turns": [] if skip is None else [skip]})
+    return rows
+
+
+def v5_conversations(n_trap: int = 250, n_decoy: int = 200, n_replay: int = 150) -> list[dict]:
+    """v5, trained on top of v3: clean oracle runs (no wrong reads, even masked), weighted to
+    v3's shift failures. n_trap hard cases with a CORRECTED 1099-INT and n_decoy medium/hard
+    cases, all from new train ids (700+) that carry the wider train-only decoy pool, plus
+    n_replay cases from the original train ids so the rest of the workflow isn't forgotten."""
+    trap = [c for c in (f"hard-{i:05d}" for i in range(700, 99_999))
+            if "corrected_1099" in env.generate_case(c).notes][:n_trap]
+    decoy = [f"{('medium', 'hard')[i % 2]}-{i:05d}" for i in range(20_000, 20_000 + n_decoy)]
+    replay = list(SPLITS["train"])
+    random.Random(5).shuffle(replay)
+    rows = (sft_conversations(trap + decoy, recovery_share=0.1, superseded_share=0, seed=5, read_recoveries=False)
+            + sft_conversations(replay[:n_replay], recovery_share=0.2, superseded_share=0, seed=6,
+                                read_recoveries=False))
+    random.Random(7).shuffle(rows)
     return rows
 
 

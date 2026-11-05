@@ -1,0 +1,4 @@
+# Environment, scripted agents, scoring and tests (CPU, any OS). Python 3.12.
+auditkit==1.1.3
+pytest>=8
+huggingface_hub>=1.0

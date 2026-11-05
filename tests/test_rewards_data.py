@@ -61,6 +61,23 @@ def test_splits_are_disjoint_and_sized():
     sets = {k: set(v) for k, v in data.SPLITS.items()}
     assert len(sets["train"]) == 2100 and len(sets["eval"]) == 300 and len(sets["eval-shift"]) == 150
     assert not (sets["train"] & sets["eval"]) and not (sets["train"] & sets["eval-shift"])
+    names = list(sets)
+    assert all(not (sets[a] & sets[b]) for i, a in enumerate(names) for b in names[i + 1:])
+
+
+def test_v5_data_is_clean_and_held_out():
+    rows = data.v5_conversations(n_trap=20, n_decoy=20, n_replay=20)
+    held = set().union(*(set(data.SPLITS[k]) for k in ("eval", "eval-shift", "dev", "dev-shift")))
+    assert not {r["case_id"] for r in rows} & held
+    assert {r["kind"] for r in rows} <= {"oracle", "bad_doc", "bad_status"}  # no wrong reads, even masked
+    assert sum("corrected_1099" in env.generate_case(r["case_id"]).notes for r in rows) >= 20
+
+    v5_kinds = ("401(k) quarterly statement", "Form 8879", "Auto insurance renewal", "Fundraising letter",
+                "Phone bill", "Employer benefits enrollment", "Form W-2 Wage and Tax Statement - ")
+    for split in ("eval", "eval-shift", "dev", "dev-shift"):
+        titles = {d.title for c in data.SPLITS[split] for d in env.generate_case(c).documents}
+        assert not any(k in t for k in v5_kinds[:-1] for t in titles), split
+        assert not any(t.startswith(v5_kinds[-1]) and t.endswith(")") for t in titles), split  # prior-year W-2
 
 
 def test_shift_cases_use_unseen_names():

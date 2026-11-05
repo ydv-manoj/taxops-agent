@@ -1,0 +1,11 @@
+# SFT training and model eval (CUDA GPU, 16 GB+; a T4 works in fp16 / 4-bit).
+# Tested with torch 2.6 (pytorch/pytorch:2.6.0-cuda12.4 image) and on Kaggle's default image.
+-r requirements.txt
+torch>=2.6
+transformers>=5.22
+peft
+accelerate
+datasets
+bitsandbytes   # only for --qlora
+# GRPO attempt only: agenttune from GitHub (needs Python 3.12 + torch 2.11), plus [vllm]:
+#   pip install "agenttune[vllm] @ git+https://github.com/Lexsi-Labs/AgentTune"

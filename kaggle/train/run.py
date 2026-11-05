@@ -1,16 +1,22 @@
-# TaxOps SFT training on a Kaggle T4 (QLoRA). Needs a read-only HF token (private dataset or Kaggle secret):
+# TaxOps SFT training on Kaggle's 2xT4. Needs a read-only HF token (private dataset or Kaggle secret):
 # Tiny Aya is gated, and the code + adapters live in a private HF repo until submission).
 # The command to run is in RUN below; results land in /kaggle/working/runs/.
 import glob, os, subprocess, sys
 
 # The token is read-only, so the adapter is not pushed: it lands in /kaggle/working and is
 # downloaded with `kaggle kernels output`, then uploaded to HF from the laptop.
-SMOKE = False
-# Both T4s with DDP (one 4-bit copy per GPU): ~2,680 tokens x 2,100 conversations is ~15 h on
-# one T4, past Kaggle's 12 h limit. --max-minutes stops cleanly and saves before that.
-TRAIN = "torchrun --nproc_per_node 2 scripts/train_sft.py --qlora"
-RUN = (f"{TRAIN} --smoke --out /kaggle/working/sft-v4-smoke" if SMOKE else
-       f"{TRAIN} --max-minutes 630 --out /kaggle/working/sft-v4")
+# v5: continue v3 (bf16 LoRA from an A10G) in fp16 on both T4s, with no 4-bit base, so the
+# adapter is trained on the same weights it is evaluated on (v4's QLoRA wasn't). First a 2-step
+# memory check on the longest conversations, then the run, then v3 and v5 on the dev-shift
+# split, one GPU each, to choose between them without touching eval-shift.
+V3 = "Manoj2142/taxops-tinyaya-sft-v3"
+TRAIN = f"torchrun --nproc_per_node 2 scripts/train_sft.py --mix v5 --init-adapter {V3} --lr 5e-5"
+EVAL = "python scripts/eval_model.py --split dev-shift"
+RUN = (f"{TRAIN} --smoke --out /kaggle/working/sft-v5-smoke && "
+       f"{TRAIN} --max-minutes 240 --out /kaggle/working/sft-v5 && "
+       f"(CUDA_VISIBLE_DEVICES=0 {EVAL} --adapter {V3} --out /kaggle/working/runs/v3-dev-shift > /kaggle/working/v3-dev.log 2>&1 & P=$!; "
+       f"CUDA_VISIBLE_DEVICES=1 {EVAL} --adapter /kaggle/working/sft-v5 --out /kaggle/working/runs/v5-dev-shift > /kaggle/working/v5-dev.log 2>&1; "
+       "wait $P; tail -n 25 /kaggle/working/v3-dev.log /kaggle/working/v5-dev.log)")
 
 
 # Read-only HF token from the private dataset papw123/taxops-hf-token (CLI-pushed runs
@@ -24,6 +30,8 @@ else:
     os.environ["HF_TOKEN"] = UserSecretsClient().get_secret("HF_TOKEN")
 subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-U", "transformers", "peft", "accelerate",
                 "huggingface_hub", "bitsandbytes"], check=True)
+# Kaggle ships torchao 0.10; new peft refuses it when wrapping a non-quantized model. Not used here.
+subprocess.run([sys.executable, "-m", "pip", "uninstall", "-q", "-y", "torchao"])
 from huggingface_hub import snapshot_download
 
 snapshot_download("Manoj2142/taxops-dev", repo_type="dataset", local_dir="/kaggle/temp/taxops",
