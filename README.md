@@ -28,6 +28,10 @@ Full held-out sets, SFT v3:
 | eval (300) | 88.7% (easy 100, medium 94, hard 72) | 95.3% | 11.4 | 0.06 | 100% | 0.995 |
 | eval-shift (150) | 68.7% | 86.9% | 15.2 | 0.47 | — | 0.963 |
 
+SFT v4 (recovery demos: open the wrong document, then carry on, with the mistake masked from the
+loss; QLoRA on 2×T4) was **worse**: eval 86.0%, shift 48.0%, and on shift it opened a decoy in
+97 of 150 cases vs 45 for v3. v3 is the submitted model; see the Article for the breakdown.
+
 Base runs were done on a free Kaggle T4. The base shift run planned 30 cases but ran out of GPU
 memory on case 23 (the base model's context grows to ~40 calls), so we report the 22 it finished
 and compare every model on those same 22. Claude on all 30 shift cases: 96.7% success, 0.8 wasted.

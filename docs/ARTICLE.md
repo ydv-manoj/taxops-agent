@@ -3,7 +3,7 @@ title: "TaxOps: teaching a 3B model to file a tax return without wasting tool ca
 authors: Manoj Kumar
 ---
 
-<!-- DRAFT for the HF Article. SFT v4 numbers pending (training on Kaggle 2xT4). -->
+<!-- DRAFT for the HF Article. -->
 
 ## TL;DR
 
@@ -86,7 +86,6 @@ TaxOps env ─► scripted oracle demos ─► SFT (Tiny Aya + LoRA) ─► eval
 | eval (300) | 88.7% (easy 100 / medium 94 / hard 72) | 95.3% | 11.4 | 0.06 | 100% | 0.995 |
 | eval-shift (150) | 68.7% | 86.9% | 15.2 | 0.47 | | 0.963 |
 
-<!-- TODO: SFT v4 rows -->
 
 The base runs are smaller because the untrained model is slow (2–3 minutes a case on a free T4).
 The base shift run was planned for 30 cases and ran out of GPU memory on case 23, so every model
@@ -108,7 +107,27 @@ budget instead of submitting.
 | arithmetic or other | 12 | 8 |
 
 The demonstrations never opened the superseded form, so the model never saw what to do once it
-had. SFT v4 adds demonstrations that read the wrong document and then leave it out.
+had. SFT v4 tried to fix that, and made it worse (next section).
+
+### SFT v4: recovery demos backfired
+
+v4 added 541 demonstrations that open the wrong document (the superseded 1099-INT, a decoy, a
+missing document id, a bad filing status) and then carry on correctly. The wrong call was masked
+out of the loss, so the model was never trained to make it, only to continue after it.
+
+| | eval-300 v3 → v4 | shift-150 v3 → v4 |
+|---|---|---|
+| Success | 88.7% → 86.0% | 68.7% → **48.0%** |
+| Wasted calls / case | 0.06 → 0.09 | 0.47 → 1.13 |
+| Cases that opened a decoy | 0 → 4 | 45 → 97 |
+| Cases that opened the superseded 1099 | 15 → 22 | 18 → 32 |
+| Failures after opening a decoy | 0 → 3 | 10 → 38 |
+
+Even with the mistake masked, seeing a wrong read in context (245 of 2,100 demonstrations)
+made the model open irrelevant documents more often, and it didn't learn to discount them, least
+of all for decoy types it had never seen. v3 stays the submitted model. (v4 also changed from
+bf16 LoRA on an A10G to 4-bit QLoRA on two T4s, so part of the drop may come from that; we
+couldn't afford a run that separates the two.)
 
 ## The road there: what each version fixed
 
@@ -117,7 +136,7 @@ had. SFT v4 adds demonstrations that read the wrong document and then leave it o
 | v1 | oracle demos, no calculator | 40% on 30 cases: every miss a mental subtraction | |
 | v2 | oracle does every subtraction with the calculator | 82.7% | 32% |
 | v3 | also totals wages and interest with the calculator; train-only decoys | 88.7% | 68.7% |
-| v4 | recovery demos for superseded and decoy reads | TODO | TODO |
+| v4 | recovery demos for superseded and decoy reads (QLoRA, 2×T4) | 86.0% | 48.0% |
 
 v2's 30-case sample said 96.7%. The full 300 said 82.7%. Always quote the full set.
 
