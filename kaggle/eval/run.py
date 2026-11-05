@@ -3,14 +3,20 @@
 # The command to run is in RUN below; results land in /kaggle/working/runs/.
 import glob, os, subprocess, sys
 
-# Earlier runs: untrained Tiny Aya (eval --limit 60, eval-shift --limit 30), then SFT v3/v4 on the full
-# eval and eval-shift splits. Now SFT v6 on eval-shift, split across both T4s (every 2nd case each).
-# `timeout` stops a shard before the weekly GPU quota runs out; traces are flushed after every case.
-ADAPTER = "Manoj2142/taxops-tinyaya-sft-v6"
-EVAL = f"timeout 220m python scripts/eval_model.py --adapter {ADAPTER} --split eval-shift"
-RUN = (f"CUDA_VISIBLE_DEVICES=0 {EVAL} --shard 0/2 --out /kaggle/working/runs/sft-v6-shift-0 > /kaggle/working/shift-0.log 2>&1 & P=$!; "
-       f"CUDA_VISIBLE_DEVICES=1 {EVAL} --shard 1/2 --out /kaggle/working/runs/sft-v6-shift-1 > /kaggle/working/shift-1.log 2>&1; "
-       "wait $P; tail -n 12 /kaggle/working/shift-0.log /kaggle/working/shift-1.log")
+# Earlier runs: untrained Tiny Aya (eval --limit 60, eval-shift --limit 30), SFT v3/v4 (full splits; v3 on
+# an HF A10G in bf16), SFT v6 on eval-shift. This run puts every final number on the same hardware
+# (T4, fp16): v6 on eval, and v3 on eval + eval-shift. Each job is split in two (every 2nd case), and
+# GPU 0 and GPU 1 each work through their own queue of shards; per-case lines go to the main log.
+V3, V6 = "Manoj2142/taxops-tinyaya-sft-v3", "Manoj2142/taxops-tinyaya-sft-v6"
+E = "python scripts/eval_model.py"
+W = "/kaggle/working"
+def job(gpu, adapter, name, split, shard):
+    out = f"{name}-{split}-{shard[0]}"
+    return (f"CUDA_VISIBLE_DEVICES={gpu} {E} --adapter {adapter} --split {split} --shard {shard} "
+            f"--out {W}/runs/{out} 2>&1 | tee {W}/{out}.log | grep --line-buffered -E '^\\[|success_rate' | sed -u 's/^/{out} /'")
+Q0 = " ; ".join([job(0, V6, "v6", "eval", "0/2"), job(0, V3, "v3", "eval", "0/2"), job(0, V3, "v3", "eval-shift", "0/2")])
+Q1 = " ; ".join([job(1, V6, "v6", "eval", "1/2"), job(1, V3, "v3", "eval", "1/2"), job(1, V3, "v3", "eval-shift", "1/2")])
+RUN = f"({Q0}) & P=$!; ({Q1}); wait $P"
 
 
 # Read-only HF token from the private dataset papw123/taxops-hf-token (CLI-pushed runs
