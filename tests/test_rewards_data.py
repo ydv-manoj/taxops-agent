@@ -150,3 +150,21 @@ def test_train_decoys_leave_eval_alone_and_differ_from_shift():
     assert not any(k in t for k in ("Form W-9", "Brokerage account summary", "Form 1095-C", "Credit card annual summary") for t in eval_titles)
     train_titles = {d.title for c in SPLITS["train"] for d in env.generate_case(c).documents}
     assert any("Form W-9" in t for t in train_titles)
+
+
+def test_two_phase_reads_corrected_form_first():
+    rows = data.v5_conversations(n_trap=15, n_decoy=0, n_replay=0, two_phase=True)
+    for r in rows:
+        case = env.generate_case(r["case_id"])
+        turns = [json.loads(m["content"]) for m in r["messages"] if m["role"] == "assistant"]
+        corrected = {d.doc_id for d in case.documents if d.title.endswith("(CORRECTED)")}
+        reads = [t for t in turns if all(c["tool_name"] == "read_document" for c in t)
+                 and any(c["parameters"]["doc_id"] in corrected for c in t)]
+        assert reads and {c["parameters"]["doc_id"] for c in reads[0]} <= corrected, r["case_id"]
+        assert score_episode(r["case_id"], _calls(r["case_id"], r["messages"])).success
+        if r["kind"] != "oracle":  # the masked turn is still the mistake
+            k = r["skip_assistant_turns"][0]
+            bad = turns[k]
+            assert any(c["tool_name"] == "lookup_standard_deduction" and c["parameters"]["filing_status"] == "joint married"
+                       or (c["tool_name"] == "read_document" and int(c["parameters"]["doc_id"][1:]) > len(case.documents))
+                       for c in bad), r["case_id"]

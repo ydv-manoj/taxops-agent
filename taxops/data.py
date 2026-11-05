@@ -51,6 +51,29 @@ def oracle_plan(case_id: str) -> list[Turn]:
     return [turns[k] for k in sorted(turns)]
 
 
+def corrected_first(case_id: str, plan: list[Turn]) -> list[Turn]:
+    """v6: read any CORRECTED form in a turn of its own, then the rest. The corrected form says
+    "This form replaces the 1099-INT previously issued", so that text is in context when the
+    model decides what else to open. v3 opened the superseded original in 19 of the 44 shift
+    cases that had one and got every one of them wrong. Same calls, one more turn."""
+    return _split_corrected(case_id, plan)[0]
+
+
+def _split_corrected(case_id: str, plan: list[Turn]) -> tuple[list[Turn], int | None]:
+    """corrected_first, plus the index of the turn that was split (None if nothing changed)."""
+    case = env.generate_case(case_id)
+    corrected = {d.doc_id for d in case.documents if d.title.endswith("(CORRECTED)")}
+    is_corr = lambda c: c[0] == "read_document" and c[1].get("doc_id") in corrected  # noqa: E731
+    i = next((k for k, turn in enumerate(plan) if any(is_corr(c) for c in turn)), None)
+    if i is None:
+        return plan, None
+    first = [c for c in plan[i] if is_corr(c)]
+    rest = [c for c in plan[i] if not is_corr(c)]
+    if not rest:
+        return plan, None
+    return plan[:i] + [first, rest] + plan[i + 1:], i
+
+
 def recovery_plan(case_id: str, rng: random.Random, kind: str | None = None) -> tuple[list[Turn], int]:
     """An oracle run with one realistic mistake, then the fix, so the model learns to recover.
     Kinds: a wrong doc id, a filing status the tools don't accept, a decoy read alongside the
@@ -81,7 +104,7 @@ def recovery_plan(case_id: str, rng: random.Random, kind: str | None = None) -> 
 
 
 def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, superseded_share: float = 0.6,
-                      seed: int = 0, read_recoveries: bool = True) -> list[dict]:
+                      seed: int = 0, read_recoveries: bool = True, two_phase: bool = False) -> list[dict]:
     """superseded_share: of the train cases with a CORRECTED 1099-INT, how many become
     read_superseded recoveries (v4). The rest stay as clean oracle runs or ordinary recoveries.
     read_recoveries=False keeps only the bad_doc / bad_status recoveries (v3, v5)."""
@@ -98,6 +121,10 @@ def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, supersed
             kinds = ["bad_doc", "bad_status"] + (["read_decoy"] * 2 if decoys else [])
             kind = rng.choice(kinds)
         plan, skip = recovery_plan(cid, rng, kind) if kind else (oracle_plan(cid), None)
+        if two_phase:
+            plan, split = _split_corrected(cid, plan)
+            if skip is not None and split is not None and skip > split:
+                skip += 1  # the masked mistake turn moved down by one
         ep = _replay(cid, plan, schemas)
         assert ep["stop"] == "submitted", cid
         # skip_assistant_turns: 0-based assistant-turn indices to exclude from the SFT loss.
@@ -106,7 +133,7 @@ def sft_conversations(case_ids: list[str], recovery_share: float = 0.2, supersed
     return rows
 
 
-def v5_conversations(n_trap: int = 250, n_decoy: int = 200, n_replay: int = 150) -> list[dict]:
+def v5_conversations(n_trap: int = 250, n_decoy: int = 200, n_replay: int = 150, two_phase: bool = False) -> list[dict]:
     """v5, trained on top of v3: clean oracle runs (no wrong reads, even masked), weighted to
     v3's shift failures. n_trap hard cases with a CORRECTED 1099-INT and n_decoy medium/hard
     cases, all from new train ids (700+) that carry the wider train-only decoy pool, plus
@@ -116,9 +143,10 @@ def v5_conversations(n_trap: int = 250, n_decoy: int = 200, n_replay: int = 150)
     decoy = [f"{('medium', 'hard')[i % 2]}-{i:05d}" for i in range(20_000, 20_000 + n_decoy)]
     replay = list(SPLITS["train"])
     random.Random(5).shuffle(replay)
-    rows = (sft_conversations(trap + decoy, recovery_share=0.1, superseded_share=0, seed=5, read_recoveries=False)
+    rows = (sft_conversations(trap + decoy, recovery_share=0.1, superseded_share=0, seed=5, read_recoveries=False,
+                              two_phase=two_phase)
             + sft_conversations(replay[:n_replay], recovery_share=0.2, superseded_share=0, seed=6,
-                                read_recoveries=False))
+                                read_recoveries=False, two_phase=two_phase))
     random.Random(7).shuffle(rows)
     return rows
 

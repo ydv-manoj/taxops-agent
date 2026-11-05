@@ -84,14 +84,15 @@ def main() -> None:
     ap.add_argument("--max-minutes", type=float, default=None, help="stop cleanly (and still save) after this long")
     ap.add_argument("--qlora", action="store_true",
                     help="load the base in 4-bit (for a 16 GB T4, which also has no bf16)")
-    ap.add_argument("--mix", choices=["v4", "v5"], default="v4",
-                    help="v4: all 2,100 train ids with recovery demos; v5: 600 targeted clean demos")
+    ap.add_argument("--mix", choices=["v4", "v5", "v6"], default="v4",
+                    help="v4: all 2,100 train ids with recovery demos; v5: 600 targeted clean demos; "
+                         "v6: v5 with CORRECTED forms read in a turn of their own")
     ap.add_argument("--init-adapter", default=None,
                     help="keep training this adapter (local dir or HF repo) instead of a fresh LoRA")
     args = ap.parse_args()
 
-    if args.mix == "v5":
-        rows = v5_conversations()
+    if args.mix in ("v5", "v6"):
+        rows = v5_conversations(two_phase=args.mix == "v6")
         rows = rows[:200] if args.smoke else rows[: args.limit] if args.limit else rows
     else:
         ids = list(SPLITS["train"])
