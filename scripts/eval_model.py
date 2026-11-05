@@ -37,6 +37,7 @@ def main() -> None:
     ap.add_argument("--adapter", default=None)
     ap.add_argument("--split", default="eval", choices=list(SPLITS))
     ap.add_argument("--limit", type=int, default=None, help="cases in total, spread evenly across tiers")
+    ap.add_argument("--shard", default=None, help="i/n: run every n-th case starting at i (one GPU per shard)")
     ap.add_argument("--max-new-tokens", type=int, default=512)
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
@@ -78,6 +79,9 @@ def main() -> None:
     schemas = tool_schemas()
     scores, turns, valid_turns, seconds = [], 0, 0, 0.0
     case_ids = pick_ids(args.split, args.limit)
+    if args.shard:
+        i, n = map(int, args.shard.split("/"))
+        case_ids = case_ids[i::n]
     with open(out_dir / "traces.jsonl", "w") as f:
         for n, cid in enumerate(case_ids, 1):
             before = dict(usage)
@@ -97,7 +101,7 @@ def main() -> None:
             print(f"[{n}/{len(case_ids)}] {cid}: success={s.success} fields={s.field_accuracy:.0%} "
                   f"calls={s.tool_calls} wasted={s.wasted_calls} stop={ep['stop']} {dt:.0f}s", flush=True)
 
-    summary = {"model": args.model, "adapter": args.adapter, "split": args.split,
+    summary = {"model": args.model, "adapter": args.adapter, "split": args.split, "shard": args.shard,
                "overall": summarize(scores),
                "by_tier": {t: summarize([s for s in scores if s.case_id.startswith(t + "-")])
                            for t in sorted({s.case_id.rsplit("-", 1)[0] for s in scores})},
