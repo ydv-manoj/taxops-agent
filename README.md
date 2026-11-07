@@ -16,36 +16,41 @@ Before → after on the **same case ids** (base runs are smaller because the unt
 | Model | Cases | Success | Field acc. | Submitted | Calls/case | Wasted/case | AuditKIT precision |
 |---|---|---|---|---|---|---|---|
 | Tiny Aya Global (base) | eval, 60 | 0% | 9.7% | 25% | 38.5 | 27.8 | 0.27 |
-| **TaxOps SFT v3** | same 60 | **90.0%** | 96.1% | 100% | 10.9 | 0.03 | — |
+| TaxOps SFT v3 | same 60 | 90.0% | 96.1% | 100% | 10.9 | 0.03 | — |
+| **TaxOps SFT v6** (submitted) | same 60 | **95.0%** | 97.9% | 100% | 10.9 | **0.02** | — |
 | Tiny Aya Global (base) | shift, 22 | 0% | 5.8% | 18% | 38.4 | 24.7 | 0.37 |
-| **TaxOps SFT v3** | same 22 | **72.7%** | 90.9% | 100% | 14.9 | 0.23 | — |
+| TaxOps SFT v3 | same 22 | 72.7% | 90.9% | 100% | 14.9 | 0.23 | — |
+| **TaxOps SFT v6** (submitted) | same 22 | **77.3%** | 92.1% | 100% | 14.9 | **0.09** | — |
 | Claude Sonnet (closed) | same 22 | 95.5% | 97.9% | 100% | 13.0 | 0.64 | — |
 
-Full held-out sets, SFT v3:
+Full held-out sets, v3 and v6 on the same hardware (Kaggle T4, fp16, greedy):
 
-| Split | Success | Field acc. | Calls/case | Wasted/case | Valid calls | AuditKIT precision |
-|---|---|---|---|---|---|---|
-| eval (300) | 88.7% (easy 100, medium 94, hard 72) | 95.3% | 11.4 | 0.06 | 100% | 0.995 |
-| eval-shift (150) | 68.7% | 86.9% | 15.2 | 0.47 | — | 0.963 |
+| Split | Model | Success | Field acc. | Calls/case | Wasted/case | Valid calls | AuditKIT precision |
+|---|---|---|---|---|---|---|---|
+| eval (300) | SFT v3 | 88.7% (easy 100, medium 94, hard 72) | 95.3% | 11.4 | 0.057 | 100% | 0.995 |
+| eval (300) | **SFT v6** | **93.3%** (easy 100, medium 94, hard 86) | 97.1% | 11.4 | **0.030** | 100% | 0.996 |
+| eval-shift (150) | SFT v3 | 67.3% | 86.4% | 15.2 | 0.47 | 100% | 0.963 |
+| eval-shift (150) | **SFT v6** | **74.0%** | 89.9% | 15.0 | **0.27** | 100% | 0.976 |
+
+v6 vs v3 case by case: eval 21 fixed / 7 broken (sign test p = 0.013), shift 21 / 11 (p = 0.11),
+both 42 / 18 (p = 0.003). v3 gives the same outcome on A10G/bf16 and T4/fp16 on 300/300 eval and
+148/150 shift cases.
+
+**SFT v6** continues from v3 with demonstrations that read a CORRECTED 1099-INT first, in a turn
+of its own, and skip the original it replaces. Cases that open the superseded form: eval 15 → 7,
+shift 19 → 9. Chosen on a separate 50-case dev set (68% → 78%), never on eval or eval-shift.
 
 SFT v4 (recovery demos: open the wrong document, then carry on, with the mistake masked from the
 loss; QLoRA on 2×T4) was **worse**: eval 86.0%, shift 48.0%, and on shift it opened a decoy in
 97 of 150 cases vs 45 for v3. Two candidate causes (the wrong-read demos, or 4-bit training vs
 full-precision eval); we couldn't afford a run that separates them.
 
-SFT v6 continues from v3 with demonstrations that read a CORRECTED 1099-INT first, in a turn of
-its own, and skip the original it replaces. On a separate 50-case dev set, same GPUs: success
-68% → 78%, wasted calls 0.42 → 0.14.
-
-<!-- FINAL: v3 vs v6 on eval-300 / eval-shift-150, same T4 hardware -->
-
-
 Base runs were done on a free Kaggle T4. The base shift run planned 30 cases but ran out of GPU
 memory on case 23 (the base model's context grows to ~40 calls), so we report the 22 it finished
-and compare every model on those same 22. Claude on all 30 shift cases: 96.7% success, 0.8 wasted.
+and compare every model on those same 22. Claude on all 30 shift cases: 96.7% success, 0.8 wasted (v6 on the same 30: 73.3%, 0.13).
 
 Takeaway: SFT turns a model that never finishes into one that solves most cases at near the
-minimum call count. Claude is more accurate on unseen decoys; the 3B model wastes fewer calls.
+minimum call count. Claude is more accurate on unseen decoys; the 3B model wastes about six times fewer calls.
 
 ## Environment
 

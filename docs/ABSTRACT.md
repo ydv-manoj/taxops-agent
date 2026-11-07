@@ -1,7 +1,5 @@
 # TaxOps: teaching a 3B model to file a tax return without wasting tool calls
 
-<!-- DRAFT. {{...}} = fill from the final same-hardware eval (runs/kaggle-eval-final). Keep < 500 words. -->
-
 Agents in production pay for every tool call: a re-read document, an irrelevant file opened, a
 malformed call retried. Track 3 problem #2 asks for fewer redundant, looping or failed calls
 without lowering task success; problem #1 asks for reliable tool calls. We study both on a task
@@ -29,14 +27,14 @@ valid-call rate, AuditKIT precision against the minimal correct run, and tokens 
 alone hides waste and waste alone rewards quitting, so we always report them together.
 
 **Results.** The untrained model never files a correct return (0% on 60 eval cases, 27.8 wasted
-of 38.5 calls). The submitted model files {{v6 eval}} of 300 held-out returns exactly with
-{{v6 eval wasted}} wasted calls per case and 100% valid calls, and {{v6 shift}} of 150 shifted
-cases (v3: {{v3 eval T4}} and {{v3 shift T4}} on the same hardware). Claude Sonnet, given the same
-CLI, solves 96.7% of 30 shifted cases but wastes about three times as many calls (0.8 vs 0.23).
+of 38.5 calls). The submitted model (v6) files 93.3% of 300 held-out returns exactly, with 0.03
+wasted calls per case and 100% valid calls, and 74.0% of 150 shifted cases (v3, same hardware:
+88.7% and 67.3%; hard tier 72% to 86%). Claude Sonnet, given the same CLI, solves 96.7% of 30
+shifted cases but wastes about six times as many calls (0.8 vs 0.13).
 
 **Limits.** The tax rules are a simplified 2025 subset and every case is synthetic. On the shifted
-set the v6-over-v3 gain is consistent across metrics but not statistically significant
-(20 cases fixed, 12 broken; sign test p ≈ 0.22). The Claude comparison estimates cost from token
+set alone the v6-over-v3 gain is not significant (21 fixed, 11 broken; p = 0.11), though it is
+on eval (21 vs 7; p = 0.013). The Claude comparison estimates cost from token
 counts rather than an API bill.
 
 All code, splits, adapters and every evaluation trace are public, and each number can be

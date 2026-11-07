@@ -8,7 +8,7 @@ datasets: [Manoj2142/taxops-traces]
 
 # TaxOps SFT v6 (LoRA for Tiny Aya Global)
 
-<!-- DRAFT. {{...}} = fill from the final same-hardware eval. Licence follows the base model; confirm before publishing. -->
+<!-- Licence follows the base model; confirm before publishing. -->
 
 A LoRA adapter that teaches **Tiny Aya Global (3.35B)** to file a synthetic federal tax return in
 the [TaxOps](https://github.com/ydv-manoj/taxops-agent) environment with six tools, using close to
@@ -19,11 +19,11 @@ the minimum number of calls. Built for the Lexsi AI Safety & Alignment Hackathon
 
 | Split | Model | Success | Field acc. | Wasted calls / case | Valid calls |
 |---|---|---|---|---|---|
-| eval (300) | Tiny Aya Global, untrained (60 cases) | 0% | 9.7% | 27.8 | |
-| eval (300) | SFT v3 | {{v3 eval}} | | | |
-| eval (300) | **SFT v6** | {{v6 eval}} | | | |
-| eval-shift (150) | SFT v3 | {{v3 shift}} | | | |
-| eval-shift (150) | **SFT v6** | {{v6 shift}} | | | |
+| eval (60 of 300) | Tiny Aya Global, untrained | 0% | 9.7% | 27.8 | |
+| eval (300) | SFT v3 | 88.7% | 95.3% | 0.057 | 100% |
+| eval (300) | **SFT v6** | **93.3%** (hard tier 86%) | 97.1% | **0.030** | 100% |
+| eval-shift (150) | SFT v3 | 67.3% | 86.4% | 0.47 | 100% |
+| eval-shift (150) | **SFT v6** | **74.0%** | 89.9% | **0.27** | 100% |
 
 Success means all 11 return fields exactly right. "Shift" cases use employer, bank and person
 names and decoy document types never seen in training. Every number is recomputed from the
@@ -59,7 +59,7 @@ as well as `<EOS_TOKEN>`.
 
 - Synthetic data and a simplified 2025 federal subset (wages, interest, dividends, simple
   Schedule C, standard or itemized deduction). Not tax advice and not for real filings.
-- On the shifted set it still fails about a quarter of cases, mostly by reading a decoy or the
-  superseded form, or by skipping a needed document.
-- The gain over v3 on the shifted set is consistent but not statistically significant
-  (20 cases fixed, 12 broken, sign test p ≈ 0.22).
+- On the shifted set it still fails about a quarter of cases, spread across reading a decoy or
+  the superseded form, skipping a needed document, and arithmetic.
+- Against v3, case by case: eval 21 fixed / 7 broken (sign test p = 0.013); shift 21 / 11
+  (p = 0.11, not significant on its own).

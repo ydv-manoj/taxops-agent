@@ -10,10 +10,11 @@ authors: Manoj Kumar
 We fine-tuned **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
 with six tools and file a federal return. The untrained model never files a correct return and
 spends about 28 of its ~38 calls on waste. After supervised fine-tuning on scripted
-demonstrations (AgentTune pipeline, scored with AuditKIT), it files **88.7%** of 300 held-out
-returns exactly right with **0.06 wasted calls per case**, and **68.7%** on a harder shifted set it
-never saw. Claude Sonnet, run the same way, is more accurate on the shifted set (96.7%) but wastes
-about three times as many calls. We also report what didn't work: a GRPO stage that ran out of
+demonstrations (AgentTune pipeline, scored with AuditKIT), it files **93.3%** of 300 held-out
+returns exactly right with **0.03 wasted calls per case**, and **74.0%** on a harder shifted set it
+never saw. The biggest single gain came from changing *what the demonstrations do* around a trap,
+not from adding examples of recovering from it. Claude Sonnet, run the same way, is more accurate
+on the shifted set (96.7%) but wastes about six times as many calls. We also report what didn't work: a GRPO stage that ran out of
 GPU credit at step 21, and a handful of tooling bugs that cost us days and may save you some.
 
 ## Why this problem
@@ -74,17 +75,26 @@ TaxOps env ─► scripted oracle demos ─► SFT (Tiny Aya + LoRA) ─► eval
 | Model | Cases | Success | Field acc. | Submitted | Calls | Wasted | AuditKIT precision |
 |---|---|---|---|---|---|---|---|
 | Tiny Aya Global | eval, 60 | 0% | 9.7% | 25% | 38.5 | 27.8 | 0.27 |
-| TaxOps SFT v3 | same 60 | **90.0%** | 96.1% | 100% | 10.9 | **0.03** | |
+| TaxOps SFT v3 | same 60 | 90.0% | 96.1% | 100% | 10.9 | 0.03 | |
+| **TaxOps SFT v6** | same 60 | **95.0%** | 97.9% | 100% | 10.9 | **0.02** | |
 | Tiny Aya Global | shift, 22 | 0% | 5.8% | 18% | 38.4 | 24.7 | 0.37 |
-| TaxOps SFT v3 | same 22 | **72.7%** | 90.9% | 100% | 14.9 | **0.23** | |
+| TaxOps SFT v3 | same 22 | 72.7% | 90.9% | 100% | 14.9 | 0.23 | |
+| **TaxOps SFT v6** | same 22 | **77.3%** | 92.1% | 100% | 14.9 | **0.09** | |
 | Claude Sonnet | same 22 | 95.5% | 97.9% | 100% | 13.0 | 0.64 | |
 
-**SFT v3 on the full held-out sets**
+**Full held-out sets, v3 and v6 on the same hardware** (Kaggle T4, fp16, greedy)
 
-| Split | Success | Field acc. | Calls | Wasted | Valid calls | AuditKIT precision |
-|---|---|---|---|---|---|---|
-| eval (300) | 88.7% (easy 100 / medium 94 / hard 72) | 95.3% | 11.4 | 0.06 | 100% | 0.995 |
-| eval-shift (150) | 68.7% | 86.9% | 15.2 | 0.47 | | 0.963 |
+| Split | Model | Success | Field acc. | Calls | Wasted | Valid calls | AuditKIT precision |
+|---|---|---|---|---|---|---|---|
+| eval (300) | SFT v3 | 88.7% (easy 100 / medium 94 / hard 72) | 95.3% | 11.4 | 0.057 | 100% | 0.995 |
+| eval (300) | **SFT v6** | **93.3%** (easy 100 / medium 94 / hard **86**) | 97.1% | 11.4 | **0.030** | 100% | 0.996 |
+| eval-shift (150) | SFT v3 | 67.3% | 86.4% | 15.2 | 0.47 | 100% | 0.963 |
+| eval-shift (150) | **SFT v6** | **74.0%** | 89.9% | 15.0 | **0.27** | 100% | 0.976 |
+
+Case by case, v6 fixes 21 of v3's eval failures and breaks 7 (sign test p = 0.013); on shift it
+fixes 21 and breaks 11 (p = 0.11); both sets together, 42 vs 18 (p = 0.003). Earlier v3 numbers
+came from an A10G in bf16; rerunning v3 on the T4 gave the same outcome on 300/300 eval and 148/150
+shift cases, so hardware isn't what separates the two models.
 
 
 The base runs are smaller because the untrained model is slow (2–3 minutes a case on a free T4).
@@ -150,11 +160,20 @@ the same Kaggle job on identical GPUs:
 | Wasted calls / case | 0.42 | **0.14** |
 | Calls over minimum (solved) | 0.24 | 0.08 |
 
-<!-- FINAL: v3 vs v6 on eval-300 and eval-shift-150, same T4 hardware, from runs/kaggle-eval-final -->
+On the held-out sets (same hardware, full table above):
 
-On the full shift set, v6 opened the superseded 1099-INT in 9 cases (v3: 18) and a decoy in 25
-(v3: 45). Case by case it fixed 20 of v3's failures and broke 12, a net gain that a sign test
-can't yet separate from noise (p ≈ 0.22), so we call it consistent, not proven.
+| | eval-300 v3 → v6 | shift-150 v3 → v6 |
+|---|---|---|
+| Success | 88.7% → **93.3%** | 67.3% → **74.0%** |
+| Hard tier | 72% → **86%** | |
+| Cases that opened the superseded 1099 | 15 → **7** | 19 → **9** |
+| Cases that opened a decoy | 0 → 0 | 45 → **25** |
+| Failures: superseded form / decoy / skipped a document / other | 15 / 0 / 5 / 14 → **7 / 0 / 5 / 8** | 19 / 11 / 8 / 11 → **9 / 8 / 9 / 13** |
+
+The trap it targeted is half as common, and nothing else got worse on eval. On shift, the
+remaining failures are spread across decoys the model has never seen, skipped documents and
+arithmetic. That's where we'd go next, with on-policy data (sample the model, keep its correct
+runs, fix its wrong ones) rather than more scripted demonstrations.
 
 ## The road there: what each version fixed
 
@@ -164,6 +183,7 @@ can't yet separate from noise (p ≈ 0.22), so we call it consistent, not proven
 | v2 | oracle does every subtraction with the calculator | 82.7% | 32% |
 | v3 | also totals wages and interest with the calculator; train-only decoys | 88.7% | 68.7% |
 | v4 | recovery demos for superseded and decoy reads (QLoRA, 2×T4) | 86.0% | 48.0% |
+| **v6** | continue v3; read the CORRECTED form first; no wrong-read demos (fp16, 2×T4) | **93.3%** | **74.0%** |
 
 v2's 30-case sample said 96.7%. The full 300 said 82.7%. Always quote the full set.
 
@@ -171,7 +191,8 @@ v2's 30-case sample said 96.7%. The full 300 said 82.7%. Always quote the full s
 
 Each shift case went to a fresh Claude Code subagent (Sonnet) that could use only the TaxOps CLI,
 from a folder without the source or answers. Across 30 shift cases: 96.7% success, 13.2 calls,
-0.8 wasted, about 35k tokens per case. On the same 30, SFT v3 got 66.7% with 0.23 wasted.
+0.8 wasted, about 35k tokens per case. On the same 30, SFT v3 got 66.7% with 0.23 wasted and
+SFT v6 73.3% with 0.13 wasted, at about 18k prompt tokens per case.
 
 Caveats: there was no API bill, so cost can only be estimated from token counts at public prices,
 and latency isn't comparable with a self-hosted model. Transcripts are published.

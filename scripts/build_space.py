@@ -15,12 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 # (name, column label, test set, trace folder); app.py looks up "v3-<set>" and "v6-<set>" for filters.
 RUNS = [
     ("base-eval-shift", "Tiny Aya Global (untrained)", "eval-shift", "base-shift-22"),
-    ("v3-eval-shift", "SFT v3", "eval-shift", "sft-v3-shift-150"),
-    ("v6-eval-shift", "SFT v6", "eval-shift", "sft-v6-shift-150"),
+    ("v3-eval-shift", "SFT v3", "eval-shift", "sft-v3-shift-150-t4"),
+    ("v6-eval-shift", "SFT v6 (submitted)", "eval-shift", "sft-v6-shift-150"),
     ("claude-eval-shift", "Claude Sonnet (closed)", "eval-shift", "claude-sonnet-shift-30"),
     ("base-eval", "Tiny Aya Global (untrained)", "eval", "base-eval-60"),
-    ("v3-eval", "SFT v3", "eval", "sft-v3-eval-300"),
-    ("v6-eval", "SFT v6", "eval", "sft-v6-eval-300"),
+    ("v3-eval", "SFT v3", "eval", "sft-v3-eval-300-t4"),
+    ("v6-eval", "SFT v6 (submitted)", "eval", "sft-v6-eval-300"),
 ]
 README = """---
 title: TaxOps replay
