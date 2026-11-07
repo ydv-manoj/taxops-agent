@@ -107,9 +107,9 @@ budget instead of submitting.
 | arithmetic or other | 12 | 8 |
 
 The demonstrations never opened the superseded form, so the model never saw what to do once it
-had. SFT v4 tried to fix that, and made it worse (next section).
+had. SFT v4 tried to fix that and got worse (next section); v6 fixed it a different way.
 
-### SFT v4: recovery demos backfired
+### SFT v4: a regression we couldn't pin down
 
 v4 added 541 demonstrations that open the wrong document (the superseded 1099-INT, a decoy, a
 missing document id, a bad filing status) and then carry on correctly. The wrong call was masked
@@ -123,11 +123,38 @@ out of the loss, so the model was never trained to make it, only to continue aft
 | Cases that opened the superseded 1099 | 15 → 22 | 18 → 32 |
 | Failures after opening a decoy | 0 → 3 | 10 → 38 |
 
-Even with the mistake masked, seeing a wrong read in context (245 of 2,100 demonstrations)
-made the model open irrelevant documents more often, and it didn't learn to discount them, least
-of all for decoy types it had never seen. v3 stays the submitted model. (v4 also changed from
-bf16 LoRA on an A10G to 4-bit QLoRA on two T4s, so part of the drop may come from that; we
-couldn't afford a run that separates the two.)
+v4 opened irrelevant documents far more often, and failed on most of the decoys it opened, worst
+on decoy types it had never seen. We have two candidate causes and no run that separates them:
+(1) wrong reads in context, even masked, may teach the model that opening extra documents is
+normal; (2) v4 was also trained differently, with 4-bit QLoRA on two T4s instead of bf16 LoRA on an
+A10G, then evaluated on the unquantized base, a train/eval mismatch v3 didn't have. Either could
+explain the drop. v6 drops the wrong-read demos (it keeps only the bad-id and bad-status recoveries)
+and trains in plain bf16/fp16 LoRA.
+
+### SFT v6: read the CORRECTED form first
+
+Instead of showing the model how to recover from reading the superseded form, v6 changes the
+demonstrations so it never needs to: when a folder contains a CORRECTED 1099-INT, the oracle reads
+it in a turn of its own, before anything else, and only then reads the rest, skipping the original
+it replaces. Same number of tool calls, one extra turn. v6 continues training from the v3 adapter
+on 600 new conversations (535 oracle, 65 bad-id/bad-status recoveries; trap-heavy hard cases,
+cases with new train-only decoys, and replayed v3 cases), 1 epoch at lr 5e-5 on two T4s.
+
+We picked it on a separate dev set (50 shifted cases outside every other split), with v3 and v6 in
+the same Kaggle job on identical GPUs:
+
+| dev-shift (50) | v3 | v6 |
+|---|---|---|
+| Success | 68% | **78%** |
+| Field accuracy | 86.9% | 91.1% |
+| Wasted calls / case | 0.42 | **0.14** |
+| Calls over minimum (solved) | 0.24 | 0.08 |
+
+<!-- FINAL: v3 vs v6 on eval-300 and eval-shift-150, same T4 hardware, from runs/kaggle-eval-final -->
+
+On the full shift set, v6 opened the superseded 1099-INT in 9 cases (v3: 18) and a decoy in 25
+(v3: 45). Case by case it fixed 20 of v3's failures and broke 12, a net gain that a sign test
+can't yet separate from noise (p ≈ 0.22), so we call it consistent, not proven.
 
 ## The road there: what each version fixed
 

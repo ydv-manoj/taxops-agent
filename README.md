@@ -30,7 +30,15 @@ Full held-out sets, SFT v3:
 
 SFT v4 (recovery demos: open the wrong document, then carry on, with the mistake masked from the
 loss; QLoRA on 2×T4) was **worse**: eval 86.0%, shift 48.0%, and on shift it opened a decoy in
-97 of 150 cases vs 45 for v3. v3 is the submitted model; see the Article for the breakdown.
+97 of 150 cases vs 45 for v3. Two candidate causes (the wrong-read demos, or 4-bit training vs
+full-precision eval); we couldn't afford a run that separates them.
+
+SFT v6 continues from v3 with demonstrations that read a CORRECTED 1099-INT first, in a turn of
+its own, and skip the original it replaces. On a separate 50-case dev set, same GPUs: success
+68% → 78%, wasted calls 0.42 → 0.14.
+
+<!-- FINAL: v3 vs v6 on eval-300 / eval-shift-150, same T4 hardware -->
+
 
 Base runs were done on a free Kaggle T4. The base shift run planned 30 cases but ran out of GPU
 memory on case 23 (the base model's context grows to ~40 calls), so we report the 22 it finished
@@ -42,7 +50,8 @@ minimum call count. Claude is more accurate on unseen decoys; the 3B model waste
 ## Environment
 
 - Deterministic cases from a case id (easy / medium / hard / shift tiers). Fixed id ranges keep
-  train (0–2099), eval (100000+) and shift (200000+) disjoint; a test checks it.
+  train (0–2099, plus 700+ / 20000+ ids for v6), eval (100000+), shift (200000+) and the dev
+  sets used to pick models (hard 110000–110029, shift 300000–300049) disjoint; a test checks it.
 - Six stateless tools: `list_documents`, `read_document`, `calculator`,
   `lookup_standard_deduction`, `compute_tax`, `submit_return`.
 - Traps: a CORRECTED 1099-INT that supersedes the original, itemize-vs-standard choice, decoy
@@ -77,16 +86,25 @@ accuracy (partial credit), valid-call rate (problem #1), and tokens / seconds pe
 ## Reproduce
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt   # TODO: add requirements.txt
-.venv/bin/pytest -q tests                      # env, verifier, rewards, split disjointness
+python -m venv .venv && .venv/bin/pip install -r requirements.txt   # CPU: env, tests, scoring
+pip install -r requirements-gpu.txt                                 # GPU box: training and eval
+PYTHONPATH=. .venv/bin/pytest -q tests         # env, verifier, rewards, split disjointness
 python scripts/demo_scripted.py                # oracle / wasteful / careless agents
 
-# SFT (A10G, ~66 min)
-python scripts/train_sft.py --out runs/sft-v3 --push <user>/taxops-tinyaya-sft-v3
-# Eval (any 16 GB+ GPU; T4 works in fp16)
-python scripts/eval_model.py --adapter <user>/taxops-tinyaya-sft-v3 --split eval --out runs/sft-v3-eval
-python scripts/eval_model.py --adapter <user>/taxops-tinyaya-sft-v3 --split eval-shift --out runs/sft-v3-shift
-python scripts/auditkit_report.py runs/sft-v3-eval/traces.jsonl
+# SFT v3 (A10G, ~66 min). v4 later changed the demo mix and the train decoys, so v3's exact data
+# lives at commit 196c8aa:
+git checkout 196c8aa && python scripts/train_sft.py --out runs/sft-v3 --push <user>/taxops-tinyaya-sft-v3
+# SFT v6: continue from v3 on the v6 mix (2×T4, ~2.8 h); kaggle/train/run.py runs exactly this
+torchrun --nproc_per_node 2 scripts/train_sft.py --mix v6 --init-adapter <user>/taxops-tinyaya-sft-v3 \
+  --lr 5e-5 --out runs/sft-v6
+
+# Eval (any 16 GB GPU; T4 works in fp16). --shard i/n splits a split across GPUs.
+python scripts/eval_model.py --adapter <user>/taxops-tinyaya-sft-v6 --split eval --out runs/sft-v6-eval
+CUDA_VISIBLE_DEVICES=0 python scripts/eval_model.py --adapter ... --split eval-shift --shard 0/2 --out runs/s0 &
+CUDA_VISIBLE_DEVICES=1 python scripts/eval_model.py --adapter ... --split eval-shift --shard 1/2 --out runs/s1
+PYTHONPATH=. python scripts/merge_shards.py --out runs/sft-v6-shift runs/s0 runs/s1
+python scripts/auditkit_report.py runs/sft-v6-shift/traces.jsonl
+# Model selection used --split dev-shift (50 cases), never eval or eval-shift.
 # GRPO attempt (A100, AgentTune + vLLM)
 python scripts/train_grpo.py --sft-adapter <user>/taxops-tinyaya-sft-v3 --only-notes corrected_1099 \
   --vllm --steps 50 --lr 2e-5 --temperature 1.0
