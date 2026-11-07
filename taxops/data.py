@@ -161,11 +161,13 @@ def export(out_dir: str) -> None:
                 f.write(json.dumps({"case_id": cid, "tier": case.tier, "prompt": env.task_prompt(cid),
                                     "answer": case.answer, "min_calls": 3 + 1 + sum(d.relevant for d in case.documents),
                                     "traps": case.notes}) + "\n")
-    rows = sft_conversations(SPLITS["train"])
-    with open(out / "sft.jsonl", "w") as f:
-        for r in rows:
-            f.write(json.dumps(r) + "\n")
-    print(f"wrote {', '.join(f'{k}={len(v)}' for k, v in SPLITS.items())}, sft={len(rows)} to {out}")
+    rows = {"sft": sft_conversations(SPLITS["train"]), "sft-v6": v5_conversations(two_phase=True)}
+    for name, rs in rows.items():
+        with open(out / f"{name}.jsonl", "w") as f:
+            for r in rs:
+                f.write(json.dumps(r) + "\n")
+    print(f"wrote {', '.join(f'{k}={len(v)}' for k, v in SPLITS.items())}, "
+          f"{', '.join(f'{k}={len(v)}' for k, v in rows.items())} to {out}")
 
 
 if __name__ == "__main__":
