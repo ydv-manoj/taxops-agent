@@ -1,0 +1,94 @@
+# TaxOps — submission sheet (Lexsi hackathon, Track 3)
+
+Deadline: end of day **Nov 14, AoE**. Everything below is ready; only steps 1–3 are left for you.
+
+## 1. Make the HF repos public (one command, ~10 s)
+
+```bash
+cd ~/learning/lexsi-taxops && .venv/bin/python scripts/go_public.py --yes
+```
+
+This makes public: model v6, model v3, the traces dataset, the replay Space and both collections.
+It keeps private: `taxops-dev` (Kaggle's code mirror) and the v1/v2/v4 adapters.
+(Or tell Claude "go public" and it will run this.)
+
+## 2. Post the HF Article
+
+On huggingface.co → your profile → **New → Article** (community blog).
+- Title: **TaxOps: teaching a 3B model to file a tax return without wasting tool calls**
+- Body: paste `docs/ARTICLE.md` **from the line `## TL;DR` down** (the top `---` block is the title/author header).
+- Publish, then copy the Article URL for the form.
+
+## 3. Fill in the form on hackathon.lexsi.ai
+
+| Field | Value |
+|---|---|
+| Team | Solo — Manoj Kumar |
+| Track | Track 3: Agentic fine-tuning — problem #2 (efficient trajectories), also #1 (reliable tool calling) |
+| Model | Tiny Aya Global (3.35B), LoRA SFT |
+| Repos used | AgentTune (GRPO stage, an attempt cut short by GPU credit; SFT in plain transformers + PEFT because of the Tiny Aya tool-turn template issue) → AuditKIT (agent_eval on every trace) |
+| GitHub | https://github.com/ydv-manoj/taxops-agent |
+| HF model collection | https://huggingface.co/collections/Manoj2142/taxops-models-6af09c4cebb37eb4c911abb5 |
+| HF dataset collection | https://huggingface.co/collections/Manoj2142/taxops-data-and-traces-6af09c4e19339ae58deca1c1 |
+| Submitted model | https://huggingface.co/Manoj2142/taxops-tinyaya-sft-v6 |
+| Dataset + traces | https://huggingface.co/datasets/Manoj2142/taxops-traces |
+| Demo | https://huggingface.co/spaces/Manoj2142/taxops-replay |
+| HF Article | *(URL from step 2)* |
+| Abstract | below (470 words) |
+
+**Headline numbers** (same hardware, held-out):
+
+| | Untrained Tiny Aya | SFT v3 | **SFT v6 (submitted)** | Claude Sonnet |
+|---|---|---|---|---|
+| eval success | 0% (60 cases) | 88.7% | **93.3%** | — |
+| eval-shift success | 0% (22 cases) | 67.3% | **74.0%** | 96.7% (30 cases) |
+| wasted calls / case (eval) | 27.8 | 0.057 | **0.030** | — |
+| wasted calls / case (shift, Claude's 30) | — | 0.23 | **0.13** | 0.8 |
+
+## 4. After the hackathon
+
+- Delete the Kaggle dataset `papw123/taxops-hf-token` and revoke that HF read token.
+
+---
+
+## Abstract (paste this)
+
+Agents in production pay for every tool call: a re-read document, an irrelevant file opened, a
+malformed call retried. Track 3 problem #2 asks for fewer redundant, looping or failed calls
+without lowering task success; problem #1 asks for reliable tool calls. We study both on a task
+where success is checkable to the dollar: filing a federal tax return from a folder of documents.
+
+**Environment.** TaxOps generates deterministic synthetic cases from an id: W-2s, 1099-INT/DIV/NEC,
+Form 1098, donation receipts and decoys, with six tools (list, read, calculator, standard
+deduction, tax computation, submit). Cases contain traps: a CORRECTED 1099-INT that supersedes an
+earlier one, the itemize-or-standard choice, and irrelevant documents. Train, eval (300), a
+shifted eval with unseen names and unseen decoy types (150), and two dev sets used only for model
+selection are disjoint id ranges, checked by tests.
+
+**Method.** We fine-tune Tiny Aya Global (3.35B, Cohere Labs) with LoRA on scripted oracle
+demonstrations, then score recorded traces with our verifier and AuditKIT agent_eval. Three
+findings shaped the data: Tiny Aya's chat template renders tool-role turns empty, so tool results
+go in user turns; the demonstrations must do all arithmetic with the calculator, because a 3B
+model's mental sums were the main error; and showing the model *how to recover* after reading the
+superseded form (v4) made it open irrelevant documents more often, while showing it *to read the
+corrected form first* (v6) halved superseded-form reads. A GRPO stage with a correctness-gated
+efficiency reward trained after several fixes (reward variance, vLLM memory and importance
+ratios) but ran out of GPU credit at step 21 of 50; we report it as an attempt.
+
+**Metrics.** Success (all 11 fields exact), field accuracy, calls and wasted calls per case,
+valid-call rate, AuditKIT precision against the minimal correct run, and tokens per case. Success
+alone hides waste and waste alone rewards quitting, so we always report them together.
+
+**Results.** The untrained model never files a correct return (0% on 60 eval cases, 27.8 wasted
+of 38.5 calls). The submitted model (v6) files 93.3% of 300 held-out returns exactly, with 0.03
+wasted calls per case and 100% valid calls, and 74.0% of 150 shifted cases (v3, same hardware:
+88.7% and 67.3%; hard tier 72% to 86%). Claude Sonnet, given the same CLI, solves 96.7% of 30
+shifted cases but wastes about six times as many calls (0.8 vs 0.13).
+
+**Limits.** The tax rules are a simplified 2025 subset and every case is synthetic. On the shifted
+set alone the v6-over-v3 gain is not significant (21 fixed, 11 broken; p = 0.11), though it is
+on eval (21 vs 7; p = 0.013). The Claude comparison estimates cost from token
+counts rather than an API bill.
+
+All code, splits, adapters and every evaluation trace are public, and each number can be
+recomputed from the traces.
