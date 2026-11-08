@@ -7,8 +7,6 @@ We fine-tune **Tiny Aya Global (3.35B)** to work through a folder of synthetic t
 with six tools and submit a correct federal return, while cutting redundant, failed and
 decoy-reading calls. Pipeline: **TaxOps env → AgentTune (SFT, GRPO attempt) → AuditKIT**.
 
-> DRAFT.
-
 ## Results
 
 Before → after on the **same case ids** (base runs are smaller because the untrained model is slow):
@@ -123,3 +121,9 @@ API bill, so latency is not comparable.
 
 AgentTune and AuditKIT (Lexsi Labs), Tiny Aya (Cohere Labs). All data is synthetic; no real or
 employer data is used.
+
+## Licence
+
+Code: MIT (see `LICENSE`). The adapters are derivatives of Tiny Aya Global and follow its
+CC-BY-NC-4.0 licence and Cohere Labs' Acceptable Use Policy. AgentTune and AuditKIT keep their own
+licences.

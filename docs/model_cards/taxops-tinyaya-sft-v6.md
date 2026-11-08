@@ -8,8 +8,6 @@ datasets: [Manoj2142/taxops-traces]
 
 # TaxOps SFT v6 (LoRA for Tiny Aya Global)
 
-<!-- Licence follows the base model; confirm before publishing. -->
-
 A LoRA adapter that teaches **Tiny Aya Global (3.35B)** to file a synthetic federal tax return in
 the [TaxOps](https://github.com/ydv-manoj/taxops-agent) environment with six tools, using close to
 the minimum number of calls. Built for the Lexsi AI Safety & Alignment Hackathon, Track 3
@@ -63,3 +61,8 @@ as well as `<EOS_TOKEN>`.
   the superseded form, skipping a needed document, and arithmetic.
 - Against v3, case by case: eval 21 fixed / 7 broken (sign test p = 0.013); shift 21 / 11
   (p = 0.11, not significant on its own).
+
+## Licence
+
+CC-BY-NC-4.0, following the base model; use must also follow
+[Cohere Labs' Acceptable Use Policy](https://docs.cohere.com/docs/c4ai-acceptable-use-policy).

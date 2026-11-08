@@ -3,8 +3,6 @@ title: "TaxOps: teaching a 3B model to file a tax return without wasting tool ca
 authors: Manoj Kumar
 ---
 
-<!-- DRAFT for the HF Article. -->
-
 ## TL;DR
 
 We fine-tuned **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
@@ -16,6 +14,13 @@ never saw. The biggest single gain came from changing *what the demonstrations d
 not from adding examples of recovering from it. Claude Sonnet, run the same way, is more accurate
 on the shifted set (96.7%) but wastes about six times as many calls. We also report what didn't work: a GRPO stage that ran out of
 GPU credit at step 21, and a handful of tooling bugs that cost us days and may save you some.
+
+**Links:** [code](https://github.com/ydv-manoj/taxops-agent) ·
+[model (SFT v6)](https://huggingface.co/Manoj2142/taxops-tinyaya-sft-v6) ·
+[data and traces](https://huggingface.co/datasets/Manoj2142/taxops-traces) ·
+[replay demo](https://huggingface.co/spaces/Manoj2142/taxops-replay) ·
+[models collection](https://huggingface.co/collections/Manoj2142/taxops-models-6af09c4cebb37eb4c911abb5) ·
+[data collection](https://huggingface.co/collections/Manoj2142/taxops-data-and-traces-6af09c4e19339ae58deca1c1)
 
 ## Why this problem
 
@@ -226,7 +231,7 @@ was saved. We report it as an attempt, not a result.
 
 ## Reproduce
 
-See the repository README. Every number above is recomputed from the published traces by
+See the [repository README](https://github.com/ydv-manoj/taxops-agent#reproduce). Every number above is recomputed from the published traces by
 `taxops.metrics` and `scripts/auditkit_report.py`.
 
 ## Credits
