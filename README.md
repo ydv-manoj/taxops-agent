@@ -7,6 +7,8 @@ We fine-tune **Tiny Aya Global (3.35B)** to work through a folder of synthetic t
 with six tools and submit a correct federal return, while cutting redundant, failed and
 decoy-reading calls. Pipeline: **TaxOps env → AgentTune (SFT, GRPO attempt) → AuditKIT**.
 
+**Write-up:** [HF Article](https://huggingface.co/blog/Manoj2142/taxops-efficient-tool-agent) · [demo](https://huggingface.co/spaces/Manoj2142/taxops-replay) · [model](https://huggingface.co/Manoj2142/taxops-tinyaya-sft-v6) · [data and traces](https://huggingface.co/datasets/Manoj2142/taxops-traces)
+
 ## Results
 
 Before → after on the **same case ids** (base runs are smaller because the untrained model is slow):

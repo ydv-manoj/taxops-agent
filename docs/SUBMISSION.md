@@ -33,7 +33,7 @@ On huggingface.co → your profile → **New → Article** (community blog).
 | Submitted model | https://huggingface.co/Manoj2142/taxops-tinyaya-sft-v6 |
 | Dataset + traces | https://huggingface.co/datasets/Manoj2142/taxops-traces |
 | Demo | https://huggingface.co/spaces/Manoj2142/taxops-replay |
-| HF Article | *(URL from step 2)* |
+| HF Article | https://huggingface.co/blog/Manoj2142/taxops-efficient-tool-agent |
 | Abstract | below (470 words) |
 
 **Headline numbers** (same hardware, held-out):
