@@ -1,16 +1,6 @@
 # TaxOps — submission sheet (Lexsi hackathon, Track 3)
 
-Deadline: end of day **Nov 14, AoE**. Everything below is ready; only steps 1–3 are left for you.
-
-## 1. Make the HF repos public (one command, ~10 s)
-
-```bash
-cd ~/learning/lexsi-taxops && .venv/bin/python scripts/go_public.py --yes
-```
-
-This makes public: model v6, model v3, the traces dataset, the replay Space and both collections.
-It keeps private: `taxops-dev` (Kaggle's code mirror) and the v1/v2/v4 adapters.
-(Or tell Claude "go public" and it will run this.)
+**Submitted 2026-11-08.** Kept as a record of what was entered.
 
 ## 2. Post the HF Article
 
