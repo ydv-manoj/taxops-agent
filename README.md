@@ -3,7 +3,7 @@
 Lexsi AI Safety & Alignment Hackathon, Track 3 (Agentic Fine-tuning). Problem statements
 #2 (efficient trajectories) and #1 (reliable tool calling).
 
-We fine-tune **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
+I fine-tune **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
 with six tools and submit a correct federal return, while cutting redundant, failed and
 decoy-reading calls. Pipeline: **TaxOps env → LoRA SFT (transformers + PEFT) → AuditKIT**, plus a GRPO attempt with **AgentTune**.
 
@@ -43,10 +43,10 @@ shift 19 → 9. Chosen on a separate 50-case dev set (68% → 78%), never on eva
 SFT v4 (recovery demos: open the wrong document, then carry on, with the mistake masked from the
 loss; QLoRA on 2×T4) was **worse**: eval 86.0%, shift 48.0%, and on shift it opened a decoy in
 97 of 150 cases vs 45 for v3. Two candidate causes (the wrong-read demos, or 4-bit training vs
-full-precision eval); we couldn't afford a run that separates them.
+full-precision eval); I couldn't afford a run that separates them.
 
 Base runs were done on a free Kaggle T4. The base shift run planned 30 cases but ran out of GPU
-memory on case 23 (the base model's context grows to ~40 calls), so we report the 22 it finished
+memory on case 23 (the base model's context grows to ~40 calls), so I report the 22 it finished
 and compare every model on those same 22. Claude on all 30 shift cases: 96.7% success, 0.8 wasted (v6 on the same 30: 73.3%, 0.13).
 
 Takeaway: SFT turns a model that never finishes into one that solves most cases at near the
@@ -66,14 +66,14 @@ minimum call count. Claude is more accurate on unseen decoys but wastes about si
 
 ## Metrics and why
 
-Success alone hides waste; efficiency alone rewards giving up. We report both, plus field
+Success alone hides waste; efficiency alone rewards giving up. I report both, plus field
 accuracy (partial credit), valid-call rate (problem #1), and tokens / seconds per case (cost).
 
 ## Findings
 
 1. **Tiny Aya's chat template drops tool-role turns.** AgentTune's distill path renders tool
    results as role `tool`, which Tiny Aya's template renders empty, so the student never sees tool
-   output. We wrote SFT with plain transformers + PEFT instead.
+   output. I wrote SFT with plain transformers + PEFT instead.
 2. **EOS mismatch.** `generation_config` stops on `<EOS_TOKEN>`, but chat turns end with
    `<|END_OF_TURN_TOKEN|>`; without stopping on it the model keeps generating.
 3. **Demonstrations must show the arithmetic.** SFT v1 (no calculator in the oracle) got 40%:
@@ -86,7 +86,7 @@ accuracy (partial credit), valid-call rate (problem #1), and tokens / seconds pe
 6. **vLLM importance-sampling correction zeroed the loss.** With the default, every IS ratio was
    masked and loss was 0; `vllm_importance_sampling_correction=False` fixed it.
 7. **GRPO was cut short.** The run stopped at step 21/50 when the GPU credit ran out; reward went
-   0.33 → 0.37 (noisy). We report it as an attempt, not a result.
+   0.33 → 0.37 (noisy). I report it as an attempt, not a result.
 
 ## Reproduce
 

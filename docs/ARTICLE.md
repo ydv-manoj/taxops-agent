@@ -5,15 +5,15 @@ authors: Manoj Kumar
 
 ## TL;DR
 
-We fine-tuned **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
+I fine-tuned **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
 with six tools and file a federal return. The untrained model never files a correct return and
 spends about 28 of its ~38 calls on waste. After LoRA fine-tuning on scripted
-demonstrations (scored with our verifier and AuditKIT), it files **93.3%** of 300 held-out
+demonstrations (scored with the TaxOps verifier and AuditKIT), it files **93.3%** of 300 held-out
 returns exactly right with **0.03 wasted calls per case**, and **74.0%** on a harder shifted set it
 never saw. The biggest single gain came from changing *what the demonstrations do* around a trap,
 not from adding examples of recovering from it. Claude Sonnet, given the same tools through a CLI, is
 more accurate on 30 shifted cases (96.7% vs 73.3%) but wastes about six times as many calls on
-them (0.8 vs 0.13). We also report what didn't work: a GRPO stage (AgentTune) that ran out of GPU
+them (0.8 vs 0.13). I also report what didn't work: a GRPO stage (AgentTune) that ran out of GPU
 credit at step 21, and a handful of tooling bugs that may save you some time.
 
 **Links:** [code](https://github.com/ydv-manoj/taxops-agent) ·
@@ -67,7 +67,7 @@ Splits are disjoint id ranges, and tests check that train-only decoys never leak
   name-level tool-call precision against the scripted oracle's calls for the same case).
 - **Tokens and seconds per case**, for the cost comparison.
 
-Success alone hides waste; waste alone rewards quitting early. We always report them together.
+Success alone hides waste; waste alone rewards quitting early. I always report them together.
 
 ## Pipeline
 
@@ -127,7 +127,7 @@ of 60 eval cases hit the 40-call budget instead of submitting.
 The demonstrations never opened the superseded form, so the model never saw what to do once it
 had. SFT v4 tried to fix that and got worse (next section); v6 fixed it a different way.
 
-### SFT v4: a regression we couldn't pin down
+### SFT v4: a regression I couldn't pin down
 
 v4 added 541 demonstrations that open the wrong document (the superseded 1099-INT, a decoy, a
 missing document id, a bad filing status) and then carry on correctly. The wrong call was masked
@@ -142,7 +142,7 @@ out of the loss, so the model was never trained to make it, only to continue aft
 | Failures after opening a decoy | 0 → 3 | 10 → 38 |
 
 v4 opened irrelevant documents far more often, and failed on most of the decoys it opened, worst
-on decoy types it had never seen. We have two candidate causes and no run that separates them:
+on decoy types it had never seen. I have two candidate causes and no run that separates them:
 (1) wrong reads in context, even masked, may teach the model that opening extra documents is
 normal; (2) v4 was also trained differently, with 4-bit QLoRA on two T4s instead of bf16 LoRA on an
 A10G, then evaluated on the unquantized base, a train/eval mismatch v3 didn't have. Either could
@@ -158,7 +158,7 @@ it replaces. Same number of tool calls, one extra turn. v6 continues training fr
 on 600 new conversations (535 oracle, 65 bad-id/bad-status recoveries; trap-heavy hard cases,
 cases with new train-only decoys, and replayed v3 cases), 1 epoch at lr 5e-5 on two T4s.
 
-We picked it on a separate dev set (50 shifted cases outside every other split), with v3 and v6 in
+I picked it on a separate dev set (50 shifted cases outside every other split), with v3 and v6 in
 the same Kaggle job on identical GPUs:
 
 | dev-shift (50) | v3 | v6 |
@@ -180,7 +180,7 @@ On the held-out sets (same hardware, full table above):
 
 The trap it targeted is half as common, and nothing else got worse on eval. On shift, the
 remaining failures are spread across decoys the model has never seen, skipped documents, and
-arithmetic or other mistakes. That's where we'd go next, with on-policy data (sample the model, keep its correct
+arithmetic or other mistakes. That's where I'd go next, with on-policy data (sample the model, keep its correct
 runs, fix its wrong ones) rather than more scripted demonstrations.
 
 ## The road there: what each version fixed
@@ -201,15 +201,15 @@ Each shift case went to a fresh Claude Code subagent (Sonnet) that could use onl
 from a folder without the source or answers. Across 30 shift cases: 96.7% success, 13.2 calls,
 0.8 wasted. On the same 30, SFT v3 got 66.7% with 0.23 wasted and SFT v6 73.3% with 0.13 wasted.
 
-Caveats: there was no API bill, so we don't quote a dollar cost. Each Claude subagent used about
+Caveats: there was no API bill, so I don't quote a dollar cost. Each Claude subagent used about
 35k tokens, but that includes Claude Code's own instructions, so it isn't comparable with the
 ~18k prompt tokens per case the 3B model reads. Latency isn't comparable either. Claude's tool
 calls and CLI logs are published with the traces.
 
-## Findings (things that cost us time)
+## Findings (things that cost me time)
 
 1. **Tiny Aya's chat template renders tool-role turns as empty.** AgentTune's distillation path
-   puts tool results in `tool` messages, so the student never sees tool output. We wrote SFT in
+   puts tool results in `tool` messages, so the student never sees tool output. I wrote SFT in
    plain transformers + PEFT with tool results in user turns.
 2. **EOS mismatch.** `generation_config` stops on `<EOS_TOKEN>`, but chat turns end with
    `<|END_OF_TURN_TOKEN|>`. Without stopping on it, generation runs on.
@@ -231,7 +231,7 @@ calls and CLI logs are published with the traces.
 The plan was SFT to teach the workflow, then GRPO with a correctness-gated efficiency reward to
 fix the traps. After fixing findings 4–6 it trained, but the GPU credit ran out at step 21 of 50.
 Mean reward moved from 0.33 (first ten steps) to 0.37 (last ten), within noise, and no adapter
-was saved. We report it as an attempt, not a result.
+was saved. I report it as an attempt, not a result.
 
 ## Reproduce
 
