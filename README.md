@@ -5,7 +5,7 @@ Lexsi AI Safety & Alignment Hackathon, Track 3 (Agentic Fine-tuning). Problem st
 
 We fine-tune **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
 with six tools and submit a correct federal return, while cutting redundant, failed and
-decoy-reading calls. Pipeline: **TaxOps env → AgentTune (SFT, GRPO attempt) → AuditKIT**.
+decoy-reading calls. Pipeline: **TaxOps env → LoRA SFT (transformers + PEFT) → AuditKIT**, plus a GRPO attempt with **AgentTune**.
 
 **Write-up:** [HF Article](https://huggingface.co/blog/Manoj2142/taxops-efficient-tool-agent) · [demo](https://huggingface.co/spaces/Manoj2142/taxops-replay) · [model](https://huggingface.co/Manoj2142/taxops-tinyaya-sft-v6) · [data and traces](https://huggingface.co/datasets/Manoj2142/taxops-traces)
 
@@ -50,7 +50,7 @@ memory on case 23 (the base model's context grows to ~40 calls), so we report th
 and compare every model on those same 22. Claude on all 30 shift cases: 96.7% success, 0.8 wasted (v6 on the same 30: 73.3%, 0.13).
 
 Takeaway: SFT turns a model that never finishes into one that solves most cases at near the
-minimum call count. Claude is more accurate on unseen decoys; the 3B model wastes about six times fewer calls.
+minimum call count. Claude is more accurate on unseen decoys but wastes about six times as many calls.
 
 ## Environment
 
@@ -67,7 +67,7 @@ minimum call count. Claude is more accurate on unseen decoys; the 3B model waste
 ## Metrics and why
 
 Success alone hides waste; efficiency alone rewards giving up. We report both, plus field
-accuracy (partial credit), valid-call rate (problem #1), and tokens / seconds per case (ROI).
+accuracy (partial credit), valid-call rate (problem #1), and tokens / seconds per case (cost).
 
 ## Findings
 

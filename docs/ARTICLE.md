@@ -7,26 +7,26 @@ authors: Manoj Kumar
 
 We fine-tuned **Tiny Aya Global (3.35B)** to work through a folder of synthetic tax documents
 with six tools and file a federal return. The untrained model never files a correct return and
-spends about 28 of its ~38 calls on waste. After supervised fine-tuning on scripted
-demonstrations (AgentTune pipeline, scored with AuditKIT), it files **93.3%** of 300 held-out
+spends about 28 of its ~38 calls on waste. After LoRA fine-tuning on scripted
+demonstrations (scored with our verifier and AuditKIT), it files **93.3%** of 300 held-out
 returns exactly right with **0.03 wasted calls per case**, and **74.0%** on a harder shifted set it
 never saw. The biggest single gain came from changing *what the demonstrations do* around a trap,
-not from adding examples of recovering from it. Claude Sonnet, run the same way, is more accurate
-on the shifted set (96.7%) but wastes about six times as many calls. We also report what didn't work: a GRPO stage that ran out of
-GPU credit at step 21, and a handful of tooling bugs that cost us days and may save you some.
+not from adding examples of recovering from it. Claude Sonnet, given the same tools through a CLI, is
+more accurate on 30 shifted cases (96.7% vs 73.3%) but wastes about six times as many calls on
+them (0.8 vs 0.13). We also report what didn't work: a GRPO stage (AgentTune) that ran out of GPU
+credit at step 21, and a handful of tooling bugs that may save you some time.
 
 **Links:** [code](https://github.com/ydv-manoj/taxops-agent) ·
 [model (SFT v6)](https://huggingface.co/Manoj2142/taxops-tinyaya-sft-v6) ·
 [data and traces](https://huggingface.co/datasets/Manoj2142/taxops-traces) ·
 [replay demo](https://huggingface.co/spaces/Manoj2142/taxops-replay) ·
-[models collection](https://huggingface.co/collections/Manoj2142/taxops-models-6af09c4cebb37eb4c911abb5) ·
-[data collection](https://huggingface.co/collections/Manoj2142/taxops-data-and-traces-6af09c4e19339ae58deca1c1)
+[models collection](https://huggingface.co/collections/Manoj2142/taxops-models) ·
+[data collection](https://huggingface.co/collections/Manoj2142/taxops-data-and-traces)
 
 ## Why this problem
 
-In production agent workflows (the kind Manoj builds for tax work, where a run takes ~20 minutes), the
-bill is mostly tool calls and the tokens they drag into the context: re-reading a document,
-opening a file that doesn't matter, retrying a malformed call. Track 3 problem #2 asks for
+In long-running agent workflows, much of the cost is tool calls and the tokens they drag into
+the context: re-reading a document, opening a file that doesn't matter, retrying a malformed call. Track 3 problem #2 asks for
 exactly this: *cut redundant, looping or failed tool calls without lowering the success rate.*
 Tax filing is a good test bed because the answer is checkable to the dollar, and the documents
 come with natural traps.
@@ -51,6 +51,9 @@ Every case is generated from its id, so it is identical on every run and anyone 
 | train | 2,100 (700 per tier) | demonstrations only |
 | eval | 300 (100 per tier) | main before/after |
 | eval-shift | 150 | did it learn the skill or the surface? |
+| dev, dev-shift | 30 hard, 50 shifted | choosing between model versions; never eval or eval-shift |
+
+v6 also trains on 600 conversations from further train-only ids (see below).
 
 Splits are disjoint id ranges, and tests check that train-only decoys never leak into eval or shift.
 
@@ -60,9 +63,9 @@ Splits are disjoint id ranges, and tests check that train-only decoys never leak
 - **Field accuracy:** partial credit, so progress is visible before success moves.
 - **Calls per case** and **wasted calls per case** (repeats, decoy reads, failed or malformed
   calls, anything after submitting).
-- **Valid-call rate** (problem #1) and **AuditKIT precision vs. the oracle** (the share of the
-  agent's calls that the minimal correct run would also make).
-- **Tokens and seconds per case**, for the ROI comparison.
+- **Valid-call rate** (problem #1) and **AuditKIT precision vs. the oracle** (AuditKIT's
+  name-level tool-call precision against the scripted oracle's calls for the same case).
+- **Tokens and seconds per case**, for the cost comparison.
 
 Success alone hides waste; waste alone rewards quitting early. We always report them together.
 
@@ -109,17 +112,17 @@ is compared on the 22 it finished.
 ### What the base model does
 
 It emits a whole batch of calls with guessed numbers before seeing a single result, then repeats
-the batch every turn. It rarely calls `compute_tax`, invents values, and usually hits the 40-call
-budget instead of submitting.
+the batch every turn. It never called `compute_tax` in any of the 82 base runs, invents values, and in 41
+of 60 eval cases hit the 40-call budget instead of submitting.
 
 ### Where SFT v3 still fails
 
-| Cause | eval failures (34) | shift failures (47) |
+| Cause (first that applies) | eval failures (34) | shift failures (47) |
 |---|---|---|
-| CORRECTED-1099 trap: read the original too and summed both | 18 | 26 |
-| read a decoy and counted it | 0 | 9 |
-| skipped a needed document | 4 | 4 |
-| arithmetic or other | 12 | 8 |
+| opened the superseded 1099-INT (CORRECTED-form trap) | 15 | 18 |
+| opened a decoy | 0 | 10 |
+| skipped a needed document | 5 | 8 |
+| arithmetic or other | 14 | 11 |
 
 The demonstrations never opened the superseded form, so the model never saw what to do once it
 had. SFT v4 tried to fix that and got worse (next section); v6 fixed it a different way.
@@ -144,7 +147,7 @@ on decoy types it had never seen. We have two candidate causes and no run that s
 normal; (2) v4 was also trained differently, with 4-bit QLoRA on two T4s instead of bf16 LoRA on an
 A10G, then evaluated on the unquantized base, a train/eval mismatch v3 didn't have. Either could
 explain the drop. v6 drops the wrong-read demos (it keeps only the bad-id and bad-status recoveries)
-and trains in plain bf16/fp16 LoRA.
+and trains in fp16 LoRA without quantization.
 
 ### SFT v6: read the CORRECTED form first
 
@@ -176,8 +179,8 @@ On the held-out sets (same hardware, full table above):
 | Failures: superseded form / decoy / skipped a document / other | 15 / 0 / 5 / 14 → **7 / 0 / 5 / 8** | 19 / 11 / 8 / 11 → **9 / 8 / 9 / 13** |
 
 The trap it targeted is half as common, and nothing else got worse on eval. On shift, the
-remaining failures are spread across decoys the model has never seen, skipped documents and
-arithmetic. That's where we'd go next, with on-policy data (sample the model, keep its correct
+remaining failures are spread across decoys the model has never seen, skipped documents, and
+arithmetic or other mistakes. That's where we'd go next, with on-policy data (sample the model, keep its correct
 runs, fix its wrong ones) rather than more scripted demonstrations.
 
 ## The road there: what each version fixed
@@ -186,21 +189,22 @@ runs, fix its wrong ones) rather than more scripted demonstrations.
 |---|---|---|---|
 | v1 | oracle demos, no calculator | 40% on 30 cases: every miss a mental subtraction | |
 | v2 | oracle does every subtraction with the calculator | 82.7% | 32% |
-| v3 | also totals wages and interest with the calculator; train-only decoys | 88.7% | 68.7% |
+| v3 | also totals wages and interest with the calculator; train-only decoys | 88.7% | 68.7% (67.3% on T4) |
 | v4 | recovery demos for superseded and decoy reads (QLoRA, 2×T4) | 86.0% | 48.0% |
 | **v6** | continue v3; read the CORRECTED form first; no wrong-read demos (fp16, 2×T4) | **93.3%** | **74.0%** |
 
 v2's 30-case sample said 96.7%. The full 300 said 82.7%. Always quote the full set.
 
-## Closed-model comparison (ROI)
+## Closed-model comparison
 
 Each shift case went to a fresh Claude Code subagent (Sonnet) that could use only the TaxOps CLI,
 from a folder without the source or answers. Across 30 shift cases: 96.7% success, 13.2 calls,
-0.8 wasted, about 35k tokens per case. On the same 30, SFT v3 got 66.7% with 0.23 wasted and
-SFT v6 73.3% with 0.13 wasted, at about 18k prompt tokens per case.
+0.8 wasted. On the same 30, SFT v3 got 66.7% with 0.23 wasted and SFT v6 73.3% with 0.13 wasted.
 
-Caveats: there was no API bill, so cost can only be estimated from token counts at public prices,
-and latency isn't comparable with a self-hosted model. Transcripts are published.
+Caveats: there was no API bill, so we don't quote a dollar cost. Each Claude subagent used about
+35k tokens, but that includes Claude Code's own instructions, so it isn't comparable with the
+~18k prompt tokens per case the 3B model reads. Latency isn't comparable either. Claude's tool
+calls and CLI logs are published with the traces.
 
 ## Findings (things that cost us time)
 
