@@ -51,7 +51,7 @@ Every case is generated from its id, so it is identical on every run and anyone 
 | train | 2,100 (700 per tier) | demonstrations only |
 | eval | 300 (100 per tier) | main before/after |
 | eval-shift | 150 | did it learn the skill or the surface? |
-| dev, dev-shift | 30 hard, 50 shifted | choosing between model versions; never eval or eval-shift |
+| dev, dev-shift | 30 hard, 50 shifted | checking a new version before the full eval runs |
 
 v6 also trains on 600 conversations from further train-only ids (see below).
 
@@ -158,8 +158,8 @@ it replaces. Same number of tool calls, one extra turn. v6 continues training fr
 on 600 new conversations (535 oracle, 65 bad-id/bad-status recoveries; trap-heavy hard cases,
 cases with new train-only decoys, and replayed v3 cases), 1 epoch at lr 5e-5 on two T4s.
 
-I picked it on a separate dev set (50 shifted cases outside every other split), with v3 and v6 in
-the same Kaggle job on identical GPUs:
+Before the full runs I checked it on a separate dev set (50 shifted cases outside every other
+split), with v3 and v6 in the same Kaggle job on identical GPUs:
 
 | dev-shift (50) | v3 | v6 |
 |---|---|---|
@@ -177,6 +177,11 @@ On the held-out sets (same hardware, full table above):
 | Cases that opened the superseded 1099 | 15 → **7** | 19 → **9** |
 | Cases that opened a decoy | 0 → 0 | 45 → **25** |
 | Failures: superseded form / decoy / skipped a document / other | 15 / 0 / 5 / 14 → **7 / 0 / 5 / 8** | 19 / 11 / 8 / 11 → **9 / 8 / 9 / 13** |
+
+A caveat on what "held-out" means here: v6's data was designed from v3's failures on eval and
+eval-shift, and I kept v6 because it beat v3 on them, so those sets are not untouched for v6. One of
+v6's new train-only decoys, last year's W-2, is also close in kind to the shift set's last-year
+1099-INT. The case-level p-values above don't account for either.
 
 The trap it targeted is half as common, and nothing else got worse on eval. On shift, the
 remaining failures are spread across decoys the model has never seen, skipped documents, and

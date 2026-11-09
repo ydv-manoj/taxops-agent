@@ -30,13 +30,14 @@ published traces.
 ## How it was trained
 
 - Continued from [SFT v3](https://huggingface.co/Manoj2142/taxops-tinyaya-sft-v3) (itself trained on
-  2,100 scripted oracle demonstrations).
+  2,100 scripted demonstrations).
 - 600 new conversations: 535 oracle runs (trap-heavy hard cases, cases with new train-only
   decoys, replayed v3 cases) and 65 recoveries from a bad document id or filing status. When a
   folder has a CORRECTED 1099-INT, the demonstration reads it first, in a turn of its own.
 - LoRA r=16, alpha=32, dropout 0.05 on all attention and MLP projections; 1 epoch, lr 5e-5,
   fp16 on 2× T4 (DDP), loss on assistant turns only. About 2.8 hours.
-- Chosen on a separate 50-case shifted dev set (v3 68% → v6 78%), never on eval or eval-shift.
+- Checked on a separate 50-case shifted dev set before the full runs (v3 68% → v6 78%). Its data
+  was designed from v3's failures on eval and eval-shift, so those sets are not untouched for v6.
 
 ## Use
 
@@ -58,7 +59,7 @@ as well as `<EOS_TOKEN>`.
 - Synthetic data and a simplified 2025 federal subset (wages, interest, dividends, simple
   Schedule C, standard or itemized deduction). Not tax advice and not for real filings.
 - On the shifted set it still fails about a quarter of cases, spread across reading a decoy or
-  the superseded form, skipping a needed document, and arithmetic.
+  the superseded form, skipping a needed document, and arithmetic or other mistakes.
 - Against v3, case by case: eval 21 fixed / 7 broken (sign test p = 0.013); shift 21 / 11
   (p = 0.11, not significant on its own).
 

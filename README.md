@@ -38,7 +38,10 @@ both 42 / 18 (p = 0.003). v3 gives the same outcome on A10G/bf16 and T4/fp16 on 
 
 **SFT v6** continues from v3 with demonstrations that read a CORRECTED 1099-INT first, in a turn
 of its own, and skip the original it replaces. Cases that open the superseded form: eval 15 → 7,
-shift 19 → 9. Chosen on a separate 50-case dev set (68% → 78%), never on eval or eval-shift.
+shift 19 → 9. Its data was designed from v3's failures on eval and eval-shift, and the final v3-vs-v6 call
+used them too, so those sets are not untouched for v6; the only check before the final runs was a
+separate 50-case dev set (68% → 78%). One of v6's new train-only decoys, last year's W-2, is close
+in kind to the shift set's last-year 1099-INT.
 
 SFT v4 (recovery demos: open the wrong document, then carry on, with the mistake masked from the
 loss; QLoRA on 2×T4) was **worse**: eval 86.0%, shift 48.0%, and on shift it opened a decoy in
@@ -49,20 +52,21 @@ Base runs were done on a free Kaggle T4. The base shift run planned 30 cases but
 memory on case 23 (the base model's context grows to ~40 calls), so I report the 22 it finished
 and compare every model on those same 22. Claude on all 30 shift cases: 96.7% success, 0.8 wasted (v6 on the same 30: 73.3%, 0.13).
 
-Takeaway: SFT turns a model that never finishes into one that solves most cases at near the
-minimum call count. Claude is more accurate on unseen decoys but wastes about six times as many calls.
+Takeaway: SFT turns a model that never files a correct return into one that solves most cases at
+near the minimum call count. Claude is more accurate on unseen decoys but wastes about six times as many calls.
 
 ## Environment
 
 - Deterministic cases from a case id (easy / medium / hard / shift tiers). Fixed id ranges keep
-  train (0–2099, plus 700+ / 20000+ ids for v6), eval (100000+), shift (200000+) and the dev
-  sets used to pick models (hard 110000–110029, shift 300000–300049) disjoint; a test checks it.
+  train (0–699 per tier; v6 adds hard 700+ and medium/hard 20000–20199), eval (100000–100099 per
+  tier), shift (200000–200149) and two dev sets (hard 110000–110029, shift 300000–300049)
+  disjoint; a test checks it.
 - Six stateless tools: `list_documents`, `read_document`, `calculator`,
   `lookup_standard_deduction`, `compute_tax`, `submit_return`.
 - Traps: a CORRECTED 1099-INT that supersedes the original, itemize-vs-standard choice, decoy
   documents. The shift split uses unseen names and unseen decoys (W-4, pay stub, prior-year 1099-INT).
-- Verifier: all 11 return fields must match. Wasted = repeats + decoy reads + failed calls +
-  calls after submit.
+- Verifier: all 11 return fields must match. Wasted = repeats + decoy reads + failed or invalid
+  calls + calls after submit.
 
 ## Metrics and why
 
@@ -76,8 +80,8 @@ accuracy (partial credit), valid-call rate (problem #1), and tokens / seconds pe
    output. I wrote SFT with plain transformers + PEFT instead.
 2. **EOS mismatch.** `generation_config` stops on `<EOS_TOKEN>`, but chat turns end with
    `<|END_OF_TURN_TOKEN|>`; without stopping on it the model keeps generating.
-3. **Demonstrations must show the arithmetic.** SFT v1 (no calculator in the oracle) got 40%:
-   every miss was a mental subtraction. v2 added calculator steps; v3 also totals multi-document
+3. **Demonstrations must show the arithmetic.** SFT v1 (no calculator in the oracle) got 40% on 30
+   eval cases: every miss was a mental subtraction. v2 added calculator steps; v3 also totals multi-document
    fields (v2 slipped digits like 266,500 vs 266,600) and adds train-only decoys → shift 32% → 68.7%.
 4. **GRPO needs variance.** From SFT, 4 rollouts at temperature 0.9 were identical (reward_std 0).
    Temperature 1.0 plus trap-only cases fixed it.
@@ -109,15 +113,15 @@ CUDA_VISIBLE_DEVICES=0 python scripts/eval_model.py --adapter ... --split eval-s
 CUDA_VISIBLE_DEVICES=1 python scripts/eval_model.py --adapter ... --split eval-shift --shard 1/2 --out runs/s1
 PYTHONPATH=. python scripts/merge_shards.py --out runs/sft-v6-shift runs/s0 runs/s1
 python scripts/auditkit_report.py runs/sft-v6-shift/traces.jsonl
-# Model selection used --split dev-shift (50 cases), never eval or eval-shift.
+# dev-shift (50 cases) was the check before the final eval runs.
 # GRPO attempt (A100, AgentTune + vLLM)
 python scripts/train_grpo.py --sft-adapter <user>/taxops-tinyaya-sft-v3 --only-notes corrected_1099 \
   --vllm --steps 50 --lr 2e-5 --temperature 1.0
 ```
 
 Claude baseline: one fresh Claude Code subagent (Sonnet) per case, using only `taxops/cli.py`
-from a folder without the source or answers. Cost is estimated from token counts; there was no
-API bill, so latency is not comparable.
+from a folder without the source or answers. There was no API bill, so I don't quote a dollar
+cost, and latency is not comparable.
 
 ## Credits
 

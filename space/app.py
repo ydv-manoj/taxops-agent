@@ -92,7 +92,7 @@ def case_ids(split: str, only: str) -> list[str]:
         ids = [c for c in ids if ok(f"v6-{split}", c) and not ok(f"v3-{split}", c)]
     elif only == "v6 failed":
         ids = [c for c in ids if f"v6-{split}" in TRACES and c in TRACES[f"v6-{split}"] and not ok(f"v6-{split}", c)]
-    elif only == "has base + Claude runs":
+    elif only == "cases every model ran":
         ids = [c for c in ids if all(c in TRACES[r["name"]] for r in runs)]
     return ids
 
@@ -113,13 +113,13 @@ def show(split: str, case_id: str):
 
 
 MAX_COLS = max(sum(r["split"] == s for r in RUNS) for s in SPLITS)
-FILTERS = ["all", "v6 fixed, v3 failed", "v6 failed", "has base + Claude runs"]
+FILTERS = ["all", "v6 fixed, v3 failed", "v6 failed", "cases every model ran"]
 
 with gr.Blocks(title="TaxOps replay") as demo:
     gr.Markdown((HERE / "intro.md").read_text())
     with gr.Row():
         split = gr.Radio(SPLITS, value=SPLITS[-1], label="Test set")
-        only = gr.Radio(FILTERS, value="has base + Claude runs", label="Show cases")
+        only = gr.Radio(FILTERS, value="cases every model ran", label="Show cases")
         case = gr.Dropdown([], label="Case")
     docs = gr.Markdown()
     with gr.Row():

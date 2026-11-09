@@ -22,14 +22,14 @@ It teaches **Tiny Aya Global (3.35B)** to file a synthetic federal tax return in
 | eval (300) | 88.7% (easy 100, medium 94, hard 72) | 95.3% | 0.057 | 100% |
 | eval-shift (150) | 67.3% | 86.4% | 0.47 | 100% |
 
-The untrained base model solves 0% of the same eval cases. An earlier run on an A10G in bf16
+The untrained base model solves 0% of the 60 of these eval cases it was run on. An earlier run on an A10G in bf16
 gave the same outcome on 300/300 eval and 148/150 shift cases.
 
 ## How it was trained
 
-- 2,100 scripted oracle demonstrations (700 easy, medium and hard cases), plus recoveries from a
-  bad document id or filing status, with the wrong call masked out of the loss.
-- The demonstrations do every sum and subtraction with the calculator tool; train-only decoy
+- 2,100 scripted demonstrations (700 each of easy, medium and hard cases); about 20% recover from
+  a bad document id or filing status, with the wrong call masked out of the loss.
+- The demonstrations do the sums and subtractions with the calculator tool; train-only decoy
   documents, distinct from the shifted test set's decoys.
 - LoRA r=16, alpha=32, dropout 0.05 on all attention and MLP projections; 1 epoch, lr 1e-4,
   bf16 on one A10G, loss on assistant turns only. Data at repository commit `196c8aa`.

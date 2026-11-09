@@ -9,8 +9,7 @@ where success is checkable to the dollar: filing a federal tax return from a fol
 Form 1098, donation receipts and decoys, with six tools (list, read, calculator, standard
 deduction, tax computation, submit). Cases contain traps: a CORRECTED 1099-INT that supersedes an
 earlier one, the itemize-or-standard choice, and irrelevant documents. Train, eval (300), a
-shifted eval with unseen names and unseen decoy types (150), and two dev sets used only for model
-selection are disjoint id ranges, checked by tests.
+shifted eval with unseen names and unseen decoy types (150), and two dev sets are disjoint id ranges, checked by tests.
 
 **Method.** I fine-tune Tiny Aya Global (3.35B, Cohere Labs) with LoRA on scripted oracle
 demonstrations, then score recorded traces with the TaxOps verifier and AuditKIT agent_eval. Three
@@ -23,7 +22,7 @@ efficiency reward trained after several fixes (reward variance, vLLM memory and 
 ratios) but ran out of GPU credit at step 21 of 50; I report it as an attempt.
 
 **Metrics.** Success (all 11 fields exact), field accuracy, calls and wasted calls per case,
-valid-call rate, AuditKIT precision against the minimal correct run, and tokens per case. Success
+valid-call rate, AuditKIT tool-call precision against a scripted oracle, and tokens per case. Success
 alone hides waste and waste alone rewards quitting, so I always report them together.
 
 **Results.** The untrained model never files a correct return (0% on 60 eval cases, 27.8 wasted
@@ -34,8 +33,8 @@ shifted cases but wastes about six times as many calls (0.8 vs 0.13).
 
 **Limits.** The tax rules are a simplified 2025 subset and every case is synthetic. On the shifted
 set alone the v6-over-v3 gain is not significant (21 fixed, 11 broken; p = 0.11), though it is
-on eval (21 vs 7; p = 0.013). The Claude comparison estimates cost from token
-counts rather than an API bill.
+on eval (21 vs 7; p = 0.013). v6's data was designed from v3's failures on the eval sets, so they are not
+fully untouched for v6. The Claude comparison has no API bill, so I don't quote a dollar cost.
 
 All code, splits, adapters and every evaluation trace are public, and each number can be
 recomputed from the traces.
